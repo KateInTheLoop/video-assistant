@@ -15,8 +15,19 @@ function headers(apiKey, betas = []) {
   return h;
 }
 
-async function call(apiKey, body, betas) {
-  const res = await fetch(API, { method: "POST", headers: headers(apiKey, betas), body: JSON.stringify(body) });
+export const HINT_TIMEOUT_MS = 8000;   // a hint that arrives after the candidate started answering is useless
+export const PREP_TIMEOUT_MS = 180000; // CV extraction and debriefs may legitimately take a while
+
+async function call(apiKey, body, betas, timeoutMs = PREP_TIMEOUT_MS) {
+  if (!apiKey) throw new Error("No Anthropic API key set (Settings).");
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(API, { method: "POST", headers: headers(apiKey, betas), body: JSON.stringify(body), signal: ac.signal });
+  } catch (e) {
+    throw new Error(e.name === "AbortError" ? `Claude did not answer within ${Math.round(timeoutMs / 1000)} s.` : `Network error reaching Claude: ${e.message}`);
+  } finally { clearTimeout(timer); }
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Claude API ${res.status}: ${err.slice(0, 300)}`);
@@ -32,7 +43,7 @@ async function call(apiKey, body, betas) {
 // Resolves to { hint, usage, ms, model }. The caller validates `hint` and records diagnostics.
 export async function getHint({ apiKey, ...ctx }) {
   const t0 = performance.now();
-  const { data, usage, model } = await call(apiKey, buildHintRequest(ctx), ["server-side-fallback-2026-07-01"]);
+  const { data, usage, model } = await call(apiKey, buildHintRequest(ctx), ["server-side-fallback-2026-07-01"], HINT_TIMEOUT_MS);
   return { hint: data, usage, model, ms: performance.now() - t0 };
 }
 
