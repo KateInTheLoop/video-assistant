@@ -122,3 +122,44 @@ export async function gapReport({ apiKey, model, jobDescription, stories }) {
   const titles = new Set(stories.map((s) => s.title.trim().toLowerCase()));
   return data.questions.map((x) => ({ q: x.q, story: x.story && titles.has(x.story.trim().toLowerCase()) ? x.story : null }));
 }
+
+// --- Debrief after the interview ---------------------------------------------
+
+const DEBRIEF_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["answers", "overall", "top_fix"],
+  properties: {
+    answers: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false, required: ["question", "story_used", "star", "went_well", "improve"],
+        properties: {
+          question: { type: "string", description: "The interviewer's question, short." },
+          story_used: { type: ["string", "null"], description: "Exact story-bank title the candidate drew on, or null." },
+          star: {
+            type: "object", additionalProperties: false, required: ["situation", "task", "action", "result"],
+            properties: { situation: { type: "boolean" }, task: { type: "boolean" }, action: { type: "boolean" }, result: { type: "boolean" } },
+            description: "Which STAR parts the answer actually contained.",
+          },
+          went_well: { type: "string", description: "One specific thing, quoting the candidate where possible." },
+          improve: { type: "string", description: "One concrete change for next time. Not a rewritten answer." },
+        },
+      },
+    },
+    overall: { type: "string", description: "Two or three sentences, warm and specific." },
+    top_fix: { type: "string", description: "The single most valuable thing to practise before the next interview." },
+  },
+};
+
+export async function debrief({ apiKey, model, lines, stories }) {
+  const transcript = lines.map((l) => `${l.speaker === "interviewer" ? "INTERVIEWER" : "CANDIDATE"}: ${l.text}`).join("\n");
+  const bank = stories.map((s) => `- ${s.title}`).join("\n") || "(empty)";
+  const { data } = await call(apiKey, {
+    model,
+    max_tokens: 16000,
+    output_config: { format: { type: "json_schema", schema: DEBRIEF_SCHEMA } },
+    fallbacks: "default",
+    system: `You are a supportive interview coach reviewing a transcript after the interview. For each question the interviewer asked, say which of the candidate's prepared stories they used (exact title or null), which STAR parts were present, one thing that went well, and one concrete improvement. Do not write model answers; the candidate must find their own words. Be specific and kind. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `# Story bank titles\n${bank}\n\n# Transcript\n${transcript}` }],
+  }, ["server-side-fallback-2026-07-01"]);
+  return data;
+}

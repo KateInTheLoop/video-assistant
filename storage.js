@@ -22,3 +22,9 @@ export async function appendTranscript(session) {
   sessions.push(session);
   await chrome.storage.local.set({ sessions: sessions.slice(-20) });
 }
+
+export async function updateLastSession(session) {
+  const { sessions = [] } = await chrome.storage.local.get("sessions");
+  if (sessions.length) sessions[sessions.length - 1] = session;
+  await chrome.storage.local.set({ sessions });
+}

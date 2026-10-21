@@ -5,6 +5,7 @@ import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
 
 const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fields = ["anthropicKey", "deepgramKey", "model", "candidateName", "cvText", "jobDescription"];
 let stories = [];
 let likely = [];
@@ -58,13 +59,23 @@ async function renderSessions() {
     const when = new Date(s.start).toLocaleString();
     const mins = Math.round((s.end - s.start) / 60000);
     const text = s.lines.map((l) => `${l.speaker === "interviewer" ? "Interviewer" : "You"}: ${l.text}`).join("\n");
-    el.innerHTML = `<b>${when}</b> · ${mins} min · ${s.lines.length} lines<details><summary>Transcript</summary><pre></pre></details>`;
+    const ps = s.paceSummary;
+    const paceLine = ps ? ` · ${ps.answers} answers, median ${ps.medianSeconds}s${ps.long ? `, ${ps.long} over 2 min` : ""}${ps.short ? `, ${ps.short} under 20s` : ""}` : "";
+    let html = `<b>${esc(when)}</b> · ${mins} min${paceLine}`;
+    if (s.debrief) {
+      html += `<p><b>Overall.</b> ${esc(s.debrief.overall)}</p><p><b>Practise next:</b> ${esc(s.debrief.top_fix)}</p>`;
+      html += `<details><summary>Per question (${s.debrief.answers.length})</summary><ol>` + s.debrief.answers.map((a, i) => {
+        const star = ["situation", "task", "action", "result"].map((k) => `<span style="color:${a.star[k] ? "var(--accent)" : "var(--warn)"}">${k[0].toUpperCase()}</span>`).join(" ");
+        const secs = s.pace?.[i]?.seconds;
+        return `<li><b>${esc(a.question)}</b>${secs != null ? ` <small>(${secs}s)</small>` : ""}<br>STAR: ${star} · story: ${esc(a.story_used || "none")}<br>✓ ${esc(a.went_well)}<br>→ ${esc(a.improve)}</li>`;
+      }).join("") + `</ol></details>`;
+    } else html += `<p><small>No debrief (add an Anthropic key, or the call failed).</small></p>`;
+    html += `<details><summary>Transcript</summary><pre></pre></details>`;
+    el.innerHTML = html;
     el.querySelector("pre").textContent = text;
     box.appendChild(el);
   }
 }
-
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 async function renderDiag() {
   const { diag = [] } = await chrome.storage.local.get("diag");

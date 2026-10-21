@@ -1,11 +1,12 @@
-import { loadSettings, appendTranscript } from "./storage.js";
+import { loadSettings, appendTranscript, updateLastSession } from "./storage.js";
 import { SttStream } from "./stt.js";
 import { WebSpeechStream } from "./webspeech.js";
-import { getHint } from "./claude.js";
+import { getHint, debrief } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
 import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
+import { answerStats, paceSummary } from "./lib/pace.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -227,8 +228,15 @@ async function stopAll() {
   stopTalkClock();
   ui.tab.classList.remove("active"); ui.mic.classList.remove("active"); ui.stop.disabled = true;
   if (transcript.length) {
-    await appendTranscript({ start: sessionStart, end: Date.now(), lines: transcript });
-    setStatus("Stopped. Transcript saved locally (see Settings → Past sessions).");
+    const end = Date.now();
+    const session = { start: sessionStart, end, lines: transcript, pace: answerStats(transcript, end), paceSummary: paceSummary(answerStats(transcript, end)) };
+    await appendTranscript(session);
+    setStatus("Stopped. Transcript saved. Writing debrief…");
+    try {
+      session.debrief = await debrief({ apiKey: settings.anthropicKey, model: settings.model, lines: transcript, stories: settings.stories });
+      await updateLastSession(session);
+      setStatus("Debrief ready in Settings → Past sessions.");
+    } catch (e) { setStatus(`Transcript saved; debrief failed: ${e.message}`, true); }
   } else setStatus("Stopped.");
   sessionStart = null;
 }
