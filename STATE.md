@@ -3,10 +3,10 @@
 ## Status (todo | doing | done | blocked)
 | Node | Status | Note |
 |---|---|---|
-| M0.1 | todo | |
-| M0.2 | todo | |
+| M0.1 | done | git initialised, first commit |
+| M0.2 | done | package.json + node --test, smoke test |
 | M0.3 | done | Google Chrome 156.0.8078.47 installed on Linux (t14), 2026-10-20 |
-| M1.1 | todo | |
+| M1.1 | done | lib/transcript.js + 4 tests; panel rewire pending in M1.4 |
 | M1.2 | todo | |
 | M1.3 | todo | |
 | M1.4 | todo | |
@@ -34,4 +34,5 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-20 22:30 tick 1: M0.1, M0.2, M1.1 done. Loop job f73f8d27 every 20m.
 - 2026-10-20 scaffold written, plan created.
