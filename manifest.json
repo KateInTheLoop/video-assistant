@@ -3,14 +3,22 @@
   "name": "Interview Coach",
   "version": "0.1.0",
   "description": "Live captions and structure hints for video interviews, grounded in your own CV and stories.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://api.anthropic.com/*",
-    "https://api.deepgram.com/*",
-    "wss://api.deepgram.com/*"
+    "https://api.deepgram.com/*"
   ],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_title": "Open Interview Coach" },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open Interview Coach"
+  },
   "options_page": "options.html",
-  "icons": { "128": "icons/icon128.png" }
+  "icons": {
+    "128": "icons/icon128.png"
+  }
 }

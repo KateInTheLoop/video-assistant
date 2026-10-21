@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 02:30 tick 13: idle (no feedback). Static review of manifest.json: removed invalid `wss://` host_permission that would have blocked the extension from loading; test added.
 - 2026-10-21 02:10 tick 12: idle (no feedback). Static review of options.js: Claude-generated stories/gaps/imports now auto-save instead of waiting for the Save button.
 - 2026-10-21 01:50 tick 11: idle (no feedback). Static review of panel.js found a bug: transcript persisted across sessions in one window → fixed with beginSessionIfNeeded(); hint card resets per session.
 - 2026-10-21 01:30 tick 10: M6.2 done. Only M6.1 (human smoke test) remains. No human feedback yet.
