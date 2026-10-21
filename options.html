@@ -76,8 +76,20 @@
   <button id="btnAddStory">Add a story</button>
 </div>
 
-<h2>Likely questions</h2>
+<h2>Likely questions and gaps</h2>
+<div class="actions">
+  <button id="btnGaps" class="primary">Find gaps for this job</button>
+  <span id="gapStatus" class="status"></span>
+</div>
 <ul id="likely"></ul>
+
+<h2>Backup</h2>
+<div class="actions">
+  <button id="btnExport">Export story bank (JSON)</button>
+  <button id="btnImport">Import story bank</button>
+  <input id="importFile" type="file" accept="application/json" style="display:none">
+  <span id="bankStatus" class="status"></span>
+</div>
 
 <div class="actions">
   <button id="btnSave" class="primary">Save</button>

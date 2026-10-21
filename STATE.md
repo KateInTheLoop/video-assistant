@@ -20,8 +20,8 @@
 | M3.4 | done | isKeyword(): ≤3 words, no punctuation, no I/you/we, no say/mention/explain; prompt rule matches; tests |
 | M3.5 | done | Settings model dropdown: opus-5-5 (default) / sonnet-5-5 / haiku-5-5, stored and used by getHint |
 | M4.1 | done | lib/storyInterview.js (10 questions, strict schema, nextIndex), claude.storyFromAnswer, Settings guided interview UI; stories tagged source=interview/cv |
-| M4.2 | todo | |
-| M4.3 | todo | |
+| M4.2 | done | claude.gapReport → likely questions as {q, story|null}, ⚠ marker + count for gaps; titles validated against bank |
+| M4.3 | done | lib/bank.js export/import/merge with round-trip tests; Settings → Backup buttons |
 | M5.1 | todo | |
 | M5.2 | todo | |
 | M6.1 | blocked | needs human: load extension in Chrome, run a Meet test call |
@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 00:50 tick 8: M4.2, M4.3 done; milestone M4 complete. 38 tests green. No human feedback yet. (Two loop prompts fired together; handled as one tick.)
 - 2026-10-21 00:30 tick 7: M3.4, M3.5, M4.1 done; milestone M3 complete. 33 tests green. No human feedback yet.
 - 2026-10-21 00:10 tick 6: M3.2, M3.3 done. 29 tests green. No human feedback yet.
 - 2026-10-20 23:50 tick 5: M3.1 done. 22 tests green. No human feedback yet.

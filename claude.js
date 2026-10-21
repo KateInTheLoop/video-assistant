@@ -90,3 +90,35 @@ ${answer}` }],
   }, ["server-side-fallback-2026-07-01"]);
   return data;
 }
+
+// --- Prep: gap report --------------------------------------------------------
+
+const GAP_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["questions"],
+  properties: {
+    questions: {
+      type: "array", minItems: 8, maxItems: 14,
+      items: {
+        type: "object", additionalProperties: false, required: ["q", "story"],
+        properties: {
+          q: { type: "string", description: "A question this job description makes likely." },
+          story: { type: ["string", "null"], description: "Exact title of the story-bank entry that best answers it, or null if no story fits." },
+        },
+      },
+    },
+  },
+};
+
+export async function gapReport({ apiKey, model, jobDescription, stories }) {
+  const bank = stories.map((s) => `- ${s.title} (${s.tags || "no tags"}): ${s.situation.slice(0, 160)}`).join("\n") || "(empty)";
+  const { data } = await call(apiKey, {
+    model,
+    max_tokens: 4000,
+    output_config: { format: { type: "json_schema", schema: GAP_SCHEMA } },
+    fallbacks: "default",
+    system: `You prepare a candidate for an interview. Given the job description and the titles of their prepared stories, list the questions most likely to come up and, for each, the single story that answers it best, by exact title. Use null when nothing fits well; an honest null is more useful than a stretch. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `# Job description\n${jobDescription || "(none)"}\n\n# Story bank\n${bank}` }],
+  }, ["server-side-fallback-2026-07-01"]);
+  const titles = new Set(stories.map((s) => s.title.trim().toLowerCase()));
+  return data.questions.map((x) => ({ q: x.q, story: x.story && titles.has(x.story.trim().toLowerCase()) ? x.story : null }));
+}

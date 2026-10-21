@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from "./storage.js";
-import { extractStories, storyFromAnswer } from "./claude.js";
+import { extractStories, storyFromAnswer, gapReport } from "./claude.js";
+import { exportBank, importBank, mergeStories, normalizeLikely } from "./lib/bank.js";
 import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
 
@@ -36,7 +37,15 @@ function renderStories() {
 
 function renderLikely() {
   $("likely").innerHTML = "";
-  for (const q of likely) { const li = document.createElement("li"); li.textContent = q; $("likely").appendChild(li); }
+  likely = normalizeLikely(likely);
+  for (const item of likely) {
+    const li = document.createElement("li");
+    li.textContent = item.story ? `${item.q}  → ${item.story}` : `⚠ ${item.q}  → no story yet`;
+    if (!item.story) li.style.color = "var(--warn)";
+    $("likely").appendChild(li);
+  }
+  const gaps = likely.filter((x) => !x.story).length;
+  if (likely.length) $("gapStatus").textContent = gaps ? `${gaps} question(s) without a story. Add one via the guided interview above.` : "Every likely question has a story.";
 }
 
 async function renderSessions() {
@@ -135,6 +144,34 @@ async function save() {
   };
   if (location.hash === "#mic") $("mic").scrollIntoView();
 
+  $("btnGaps").onclick = async () => {
+    const st = $("gapStatus");
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (!stories.length) { st.textContent = "Add some stories first."; return; }
+    st.textContent = "Asking Claude…"; $("btnGaps").disabled = true;
+    try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); }
+    catch (e) { st.textContent = e.message; }
+    finally { $("btnGaps").disabled = false; }
+  };
+  $("btnExport").onclick = () => {
+    const blob = new Blob([exportBank(stories, likely)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `story-bank-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  $("btnImport").onclick = () => $("importFile").click();
+  $("importFile").onchange = async () => {
+    const file = $("importFile").files[0]; if (!file) return;
+    try {
+      const { stories: incoming, likelyQuestions } = importBank(await file.text());
+      const r = mergeStories(stories, incoming);
+      stories = r.stories; if (likelyQuestions.length && !likely.length) likely = likelyQuestions;
+      renderStories(); renderLikely(); renderInterview();
+      $("bankStatus").textContent = `Imported ${r.added} stories (${r.skipped} duplicates skipped). Click Save.`;
+    } catch (e) { $("bankStatus").textContent = e.message; }
+    $("importFile").value = "";
+  };
+
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
   $("btnSave").onclick = save;
   $("btnExtract").onclick = async () => {
@@ -149,7 +186,7 @@ async function save() {
         cvText: $("cvText").value, jobDescription: $("jobDescription").value,
       });
       stories = [...stories, ...out.stories.map((s) => ({ ...s, source: "cv" }))];
-      likely = out.likely_questions;
+      likely = normalizeLikely(out.likely_questions);
       renderStories(); renderLikely();
       st.textContent = `Drafted ${out.stories.length} stories. Edit them, then Save.`;
     } catch (e) { st.textContent = e.message; }
