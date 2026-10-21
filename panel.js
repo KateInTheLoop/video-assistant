@@ -1,6 +1,9 @@
 import { loadSettings, appendTranscript } from "./storage.js";
 import { SttStream } from "./stt.js";
 import { getHint } from "./claude.js";
+import { mergeFinal } from "./lib/transcript.js";
+import { shouldAskForHint } from "./lib/question.js";
+import { validateHint } from "./lib/hintSchema.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -59,22 +62,17 @@ function onInterim({ speaker, text }) {
 
 function onFinal({ speaker, text, speechFinal }) {
   interim[speaker] = null;
-  const last = transcript[transcript.length - 1];
-  // Merge consecutive fragments from the same speaker into one line.
-  if (last && last.speaker === speaker && Date.now() - last.t < 4000) {
-    last.text += " " + text; last.t = Date.now();
-  } else {
-    transcript.push({ speaker, text, t: Date.now() });
-  }
+  mergeFinal(transcript, { speaker, text });
   renderTranscript();
 
   if (speaker === "interviewer") {
-    pendingQuestion += " " + text;
     stopTalkClock();
-    // Ask Claude as soon as the interviewer pauses, or immediately on a question mark.
+    const decision = shouldAskForHint({ text, speechFinal, pendingText: pendingQuestion });
+    pendingQuestion += " " + text;
     clearTimeout(hintTimer);
-    if (/\?\s*$/.test(text) || speechFinal) requestHint();
-    else hintTimer = setTimeout(requestHint, 900);
+    if (!decision.ask) return;
+    if (decision.delayMs === 0) requestHint();
+    else hintTimer = setTimeout(requestHint, decision.delayMs);
   }
 }
 
@@ -88,15 +86,17 @@ async function requestHint() {
   clearTimeout(hintTimer);
   const q = pendingQuestion.trim();
   if (!q || hintInFlight) return;
-  if (q.split(/\s+/).length < 3) return; // "mm-hm", "okay" are not questions
   hintInFlight = true;
   pendingQuestion = "";
   const t0 = performance.now();
   try {
-    const hint = await getHint({
+    const raw = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
     });
+    const { ok, errors, hint } = validateHint(raw, settings.stories.map((s) => s.title));
+    if (errors.length) console.warn("hint validator:", errors);
+    if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) renderHint(hint);
     setStatus(`Hint in ${Math.round(performance.now() - t0)} ms`);
   } catch (e) {

@@ -1,4 +1,7 @@
 // Raw Messages API calls. No bundler in this extension, so we use fetch directly.
+import { HINT_SCHEMA } from "./lib/hintSchema.js";
+import { recent } from "./lib/transcript.js";
+
 const API = "https://api.anthropic.com/v1/messages";
 
 function headers(apiKey, betas = []) {
@@ -26,29 +29,6 @@ async function call(apiKey, body, betas) {
 
 // --- Live hint -------------------------------------------------------------
 
-const HINT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["is_question", "question_summary", "question_type", "stories", "keywords", "watch_out"],
-  properties: {
-    is_question: { type: "boolean", description: "True if the interviewer just asked something the candidate needs to answer." },
-    question_summary: { type: "string", description: "The question restated in under 12 words. Empty if not a question." },
-    question_type: { type: "string", enum: ["behavioral", "technical", "situational", "motivation", "experience", "logistics", "smalltalk", "none"] },
-    stories: {
-      type: "array", maxItems: 2,
-      items: {
-        type: "object", additionalProperties: false, required: ["title", "cue"],
-        properties: {
-          title: { type: "string", description: "Exact title of a story from the story bank." },
-          cue: { type: "string", description: "One short phrase reminding the candidate of the key beat, max 10 words." },
-        },
-      },
-    },
-    keywords: { type: "array", maxItems: 4, items: { type: "string" }, description: "Keywords only, 1-3 words each. Never a sentence." },
-    watch_out: { type: "string", description: "One short caution, e.g. 'they asked for a failure, not a success'. Empty if none." },
-  },
-};
-
 const HINT_SYSTEM = `You are a quiet interview coach sitting next to a candidate during a live video interview.
 You see the rolling transcript. The INTERVIEWER lines come from the call audio, the CANDIDATE lines from the candidate's microphone.
 
@@ -65,7 +45,7 @@ export async function getHint({ apiKey, model, transcript, stories, jobDescripti
   const bank = stories.length
     ? stories.map((s) => `### ${s.title}\nTags: ${s.tags || ""}\nSituation: ${s.situation}\nAction: ${s.action}\nResult: ${s.result}`).join("\n\n")
     : "(empty)";
-  const recent = transcript.slice(-14).map((t) => `${t.speaker.toUpperCase()}: ${t.text}`).join("\n");
+  const recentLines = recent(transcript, 14);
 
   const system = [
     { type: "text", text: HINT_SYSTEM },
@@ -79,7 +59,7 @@ export async function getHint({ apiKey, model, transcript, stories, jobDescripti
     output_config: { effort: "low", format: { type: "json_schema", schema: HINT_SCHEMA } },
     fallbacks: "default",
     system,
-    messages: [{ role: "user", content: `Rolling transcript (most recent last):\n\n${recent}\n\nProduce the hint for the interviewer's latest utterance.` }],
+    messages: [{ role: "user", content: `Rolling transcript (most recent last):\n\n${recentLines}\n\nProduce the hint for the interviewer's latest utterance.` }],
   }, ["server-side-fallback-2026-07-01"]);
 }
 
