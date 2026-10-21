@@ -1,5 +1,6 @@
 import { loadSettings, appendTranscript } from "./storage.js";
 import { SttStream } from "./stt.js";
+import { WebSpeechStream } from "./webspeech.js";
 import { getHint } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
 import { shouldAskForHint } from "./lib/question.js";
@@ -179,15 +180,20 @@ async function captureTab() {
 }
 
 async function captureMic() {
-  if (!settings.deepgramKey) return setStatus("Add a Deepgram key in Settings first.", true);
+  const useBuiltin = !settings.deepgramKey;
+  if (useBuiltin && !WebSpeechStream.supported()) return setStatus("Add a Deepgram key in Settings first.", true);
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     media.candidate = stream;
-    streams.candidate = sttFor("candidate");
+    if (useBuiltin) {
+      streams.candidate = new WebSpeechStream({ speaker: "candidate", onInterim, onFinal, onUtteranceEnd, onError: (e) => setStatus(e.message, true) });
+    } else {
+      streams.candidate = sttFor("candidate");
+    }
     await streams.candidate.start(stream);
     ui.mic.classList.add("active"); ui.stop.disabled = false;
     sessionStart ??= Date.now();
-    setStatus("Mic live. Good luck.");
+    setStatus(useBuiltin ? "Mic live via Chrome's built-in recognition (no Deepgram key). Call audio still needs a Deepgram key." : "Mic live. Good luck.");
   } catch (e) {
     if (e.name === "NotAllowedError" || e.name === "NotFoundError") {
       setStatus("", true);
