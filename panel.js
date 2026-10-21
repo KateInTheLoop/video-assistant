@@ -150,11 +150,13 @@ function stopTalkClock() {
 // --- Capture -----------------------------------------------------------------
 
 function sttFor(speaker) {
-  return new SttStream({
+  const stream = new SttStream({
     apiKey: settings.deepgramKey, speaker,
     onInterim, onFinal, onUtteranceEnd,
     onError: (e) => setStatus(e.message, true),
   });
+  stream.onStatus = (msg) => setStatus(msg);
+  return stream;
 }
 
 async function captureTab() {

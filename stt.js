@@ -1,3 +1,5 @@
+import { backoffDelays } from "./lib/backoff.js";
+
 // One Deepgram streaming connection per audio source (interviewer tab, candidate mic).
 // Keeping the streams separate is what lets us know who said what.
 export class SttStream {
@@ -11,9 +13,20 @@ export class SttStream {
     this.ws = null;
     this.ctx = null;
     this.keepalive = null;
+    this.mediaStream = null;
+    this.retries = 0;
+    this.stopped = false;
+    this.onStatus = () => {};
   }
 
   async start(mediaStream) {
+    this.mediaStream = mediaStream;
+    this.stopped = false;
+    await this.connect();
+    await this.startAudio(mediaStream);
+  }
+
+  async connect() {
     const params = new URLSearchParams({
       model: "nova-3",
       language: "en",
@@ -49,8 +62,31 @@ export class SttStream {
         this.onError?.(new Error(msg.description || "Deepgram error"));
       }
     };
-    this.ws.onclose = (e) => { if (e.code !== 1000) this.onError?.(new Error(`Deepgram closed (${this.speaker}): ${e.code} ${e.reason}`)); };
+    this.ws.onclose = (e) => { if (e.code !== 1000 && !this.stopped) this.reconnect(e); };
+    this.retries = 0;
+  }
 
+  // Retry with backoff while the media stream is still live; surface the failure after the last attempt.
+  async reconnect(closeEvent) {
+    const delays = backoffDelays();
+    const live = this.mediaStream?.getAudioTracks().some((t) => t.readyState === "live");
+    if (!live || this.retries >= delays.length) {
+      this.onError?.(new Error(`Deepgram closed (${this.speaker}): ${closeEvent.code} ${closeEvent.reason || ""}`.trim()));
+      return;
+    }
+    const delay = delays[this.retries++];
+    this.onStatus(`Transcription dropped (${this.speaker}), reconnecting in ${delay / 1000}s…`);
+    await new Promise((r) => setTimeout(r, delay));
+    if (this.stopped) return;
+    try {
+      await this.connect();
+      this.onStatus(`Transcription back (${this.speaker}).`);
+    } catch (e) {
+      this.reconnect({ code: 1006, reason: e.message });
+    }
+  }
+
+  async startAudio(mediaStream) {
     // Ask the AudioContext for 16kHz so Chrome does the resampling for us.
     this.ctx = new AudioContext({ sampleRate: 16000 });
     await this.ctx.audioWorklet.addModule("pcm-worklet.js");
@@ -70,6 +106,7 @@ export class SttStream {
   }
 
   stop() {
+    this.stopped = true;
     clearInterval(this.keepalive);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "CloseStream" }));
