@@ -15,7 +15,7 @@
 | M2.3 | done | webspeech.js: Chrome built-in recognition for mic when no Deepgram key; interviewer still needs Deepgram |
 | M2.4 | done | panel.html idle status + silent-share error + README all say: Chrome Tab, tick Share tab audio |
 | M3.1 | done | lib/hintRequest.js (pure request builder, test proves stable cached prefix), lib/diag.js ring buffer, Settings → Diagnostics shows latency + cache reads. Live cache-hit confirmation still needs a real run (M6.1) |
-| M3.2 | todo | |
+| M3.2 | done | lib/scheduler.js HintScheduler: coalesce fragments, 2 s min gap, no overlap, candidate speech clears pending; 5 tests; panel uses it |
 | M3.3 | todo | |
 | M3.4 | todo | |
 | M3.5 | todo | |
@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 00:10 tick 6: M3.2 done. 27 tests green. No human feedback yet.
 - 2026-10-20 23:50 tick 5: M3.1 done. 22 tests green. No human feedback yet.
 - 2026-10-20 23:30 tick 4: M2.2, M2.3, M2.4 done; milestone M2 complete. No human feedback yet.
 - 2026-10-20 23:10 tick 3: M1.4, M2.1 done, milestone M1 complete. 18 tests green. No human feedback yet.

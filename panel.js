@@ -3,7 +3,7 @@ import { SttStream } from "./stt.js";
 import { WebSpeechStream } from "./webspeech.js";
 import { getHint } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
-import { shouldAskForHint } from "./lib/question.js";
+import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
 
@@ -20,8 +20,7 @@ let streams = { interviewer: null, candidate: null };
 let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
-let pendingQuestion = "";            // interviewer speech since last hint
-let hintInFlight = false;
+const scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
 let talkStart = null, talkTimer = null;
 let sessionStart = null;
@@ -58,7 +57,7 @@ function lineEl(speaker, text, isInterim) {
 
 function onInterim({ speaker, text }) {
   interim[speaker] = text;
-  if (speaker === "candidate" && !talkStart) startTalkClock();
+  if (speaker === "candidate") { scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
   renderTranscript();
 }
 
@@ -69,27 +68,30 @@ function onFinal({ speaker, text, speechFinal }) {
 
   if (speaker === "interviewer") {
     stopTalkClock();
-    const decision = shouldAskForHint({ text, speechFinal, pendingText: pendingQuestion });
-    pendingQuestion += " " + text;
-    clearTimeout(hintTimer);
-    if (!decision.ask) return;
-    if (decision.delayMs === 0) requestHint();
-    else hintTimer = setTimeout(requestHint, decision.delayMs);
+    schedule(scheduler.onInterviewerFinal({ text, speechFinal }, Date.now()));
   }
 }
 
 function onUtteranceEnd({ speaker }) {
-  if (speaker === "interviewer" && pendingQuestion.trim()) requestHint();
+  if (speaker === "interviewer") schedule(scheduler.onUtteranceEnd(Date.now()));
+}
+
+function schedule(plan) {
+  if (!plan) return;
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(requestHint, plan.fireInMs);
 }
 
 // --- Hints -----------------------------------------------------------------
 
 async function requestHint() {
   clearTimeout(hintTimer);
-  const q = pendingQuestion.trim();
-  if (!q || hintInFlight) return;
-  hintInFlight = true;
-  pendingQuestion = "";
+  const q = scheduler.take(Date.now());
+  if (q === null) {
+    // Gate or in-flight blocked us; the done() path or the next speech event reschedules.
+    if (!scheduler.inFlight && scheduler.pending) schedule({ fireInMs: scheduler.nextDelay(Date.now()) });
+    return;
+  }
   const t0 = performance.now();
   let res = null;
   try {
@@ -108,9 +110,7 @@ async function requestHint() {
     setStatus(e.message, true);
     recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
   } finally {
-    hintInFlight = false;
-    // If more interviewer speech arrived meanwhile, process it.
-    if (pendingQuestion.trim()) hintTimer = setTimeout(requestHint, 300);
+    schedule(scheduler.done(Date.now()));
   }
 }
 
