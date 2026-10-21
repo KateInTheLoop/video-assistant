@@ -5,6 +5,7 @@ import { getHint } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
 import { shouldAskForHint } from "./lib/question.js";
 import { validateHint } from "./lib/hintSchema.js";
+import { makeEntry, pushEntry } from "./lib/diag.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -90,23 +91,34 @@ async function requestHint() {
   hintInFlight = true;
   pendingQuestion = "";
   const t0 = performance.now();
+  let res = null;
   try {
-    const raw = await getHint({
+    res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
     });
-    const { ok, errors, hint } = validateHint(raw, settings.stories.map((s) => s.title));
+    const { ok, errors, hint } = validateHint(res.hint, settings.stories.map((s) => s.title));
     if (errors.length) console.warn("hint validator:", errors);
     if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) renderHint(hint);
-    setStatus(`Hint in ${Math.round(performance.now() - t0)} ms`);
+    const cached = res.usage.cache_read_input_tokens ? ", cached" : "";
+    setStatus(`Hint in ${Math.round(res.ms)} ms${cached}`);
+    recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
     setStatus(e.message, true);
+    recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
   } finally {
     hintInFlight = false;
     // If more interviewer speech arrived meanwhile, process it.
     if (pendingQuestion.trim()) hintTimer = setTimeout(requestHint, 300);
   }
+}
+
+async function recordDiag(info) {
+  const entry = makeEntry(info);
+  console.info("hint diag", entry);
+  const { diag = [] } = await chrome.storage.local.get("diag");
+  await chrome.storage.local.set({ diag: pushEntry(diag, entry) });
 }
 
 function renderHint(h) {

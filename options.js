@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from "./storage.js";
 import { extractStories } from "./claude.js";
+import { summarize } from "./lib/diag.js";
 
 const $ = (id) => document.getElementById(id);
 const fields = ["anthropicKey", "deepgramKey", "model", "candidateName", "cvText", "jobDescription"];
@@ -53,6 +54,19 @@ async function renderSessions() {
   }
 }
 
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function renderDiag() {
+  const { diag = [] } = await chrome.storage.local.get("diag");
+  const s = summarize(diag);
+  $("diagSummary").textContent = s.count
+    ? `${s.count} hint calls · median ${s.medianMs} ms · cache hits ${Math.round(s.cacheHitRate * 100)}% (should be high after the first call of a session)`
+    : "No hint calls recorded yet.";
+  const rows = [...diag].reverse().slice(0, 20).map((e) =>
+    `<tr><td>${new Date(e.t).toLocaleTimeString()}</td><td>${e.ok ? e.ms + " ms" : "error"}</td><td>${esc(e.model)}</td><td>${e.input}</td><td>${e.cacheRead}</td><td>${e.output}</td><td>${esc(e.error)}</td></tr>`).join("");
+  $("diagTable").innerHTML = rows ? `<tr><th>time</th><th>latency</th><th>model</th><th>input</th><th>cache read</th><th>output</th><th></th></tr>${rows}` : "";
+}
+
 async function save() {
   const partial = {};
   for (const f of fields) partial[f] = $(f).value.trim();
@@ -68,7 +82,8 @@ async function save() {
   for (const f of fields) $(f).value = s[f] || "";
   stories = s.stories || [];
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
-  renderStories(); renderLikely(); renderSessions();
+  renderStories(); renderLikely(); renderSessions(); renderDiag();
+  $("btnClearDiag").onclick = async () => { await chrome.storage.local.set({ diag: [] }); renderDiag(); };
 
   $("btnMic").onclick = async () => {
     const st = $("micStatus");
