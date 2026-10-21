@@ -35,6 +35,8 @@ _Screenshot placeholder: Settings with story bank and gap list._
 
 _Screenshot placeholder: Chrome share picker with Chrome Tab selected and the audio checkbox ticked._
 
+Wear headphones. Without them the mic hears the interviewer through your speakers and their words show up as yours.
+
 ## 4. During the call
 - The big line is the question, restated. Below it: up to two of your stories with a cue, and up to four keywords.
 - Keywords are prompts for your own words, never a script. Look at them, then look back at the camera.

@@ -22,8 +22,21 @@ export class SttStream {
   async start(mediaStream) {
     this.mediaStream = mediaStream;
     this.stopped = false;
+    // Audio graph first, so we know the real sample rate before telling Deepgram.
+    this.sampleRate = await this.openAudioContext();
     await this.connect();
     await this.startAudio(mediaStream);
+  }
+
+  // Prefer 16 kHz (Chrome resamples the capture for us); fall back to the device rate if refused.
+  async openAudioContext() {
+    try {
+      this.ctx = new AudioContext({ sampleRate: 16000 });
+    } catch {
+      this.ctx = new AudioContext();
+    }
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    return this.ctx.sampleRate;
   }
 
   async connect() {
@@ -31,7 +44,7 @@ export class SttStream {
       model: "nova-3",
       language: "en",
       encoding: "linear16",
-      sample_rate: "16000",
+      sample_rate: String(this.sampleRate || 16000),
       channels: "1",
       interim_results: "true",
       smart_format: "true",
@@ -87,8 +100,6 @@ export class SttStream {
   }
 
   async startAudio(mediaStream) {
-    // Ask the AudioContext for 16kHz so Chrome does the resampling for us.
-    this.ctx = new AudioContext({ sampleRate: 16000 });
     await this.ctx.audioWorklet.addModule("pcm-worklet.js");
     const src = this.ctx.createMediaStreamSource(mediaStream);
     const node = new AudioWorkletNode(this.ctx, "pcm-worklet");

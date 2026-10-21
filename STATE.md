@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 02:50 tick 14: idle (no feedback). stt.js: open AudioContext first and send its real sample rate to Deepgram (fallback if 16 kHz refused); resume suspended context. Docs: wear headphones.
 - 2026-10-21 02:30 tick 13: idle (no feedback). Static review of manifest.json: removed invalid `wss://` host_permission that would have blocked the extension from loading; test added.
 - 2026-10-21 02:10 tick 12: idle (no feedback). Static review of options.js: Claude-generated stories/gaps/imports now auto-save instead of waiting for the Save button.
 - 2026-10-21 01:50 tick 11: idle (no feedback). Static review of panel.js found a bug: transcript persisted across sessions in one window → fixed with beginSessionIfNeeded(); hint card resets per session.
