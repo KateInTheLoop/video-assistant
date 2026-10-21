@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from "./storage.js";
-import { extractStories } from "./claude.js";
+import { extractStories, storyFromAnswer } from "./claude.js";
+import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
 
 const $ = (id) => document.getElementById(id);
@@ -67,6 +68,24 @@ async function renderDiag() {
   $("diagTable").innerHTML = rows ? `<tr><th>time</th><th>latency</th><th>model</th><th>input</th><th>cache read</th><th>output</th><th></th></tr>${rows}` : "";
 }
 
+let giIndex = 0;
+let giSkipped = new Set();
+
+function renderInterview() {
+  let i = nextIndex(stories);
+  while (i !== -1 && giSkipped.has(STANDARD_QUESTIONS[i].tag)) {
+    const rest = STANDARD_QUESTIONS.slice(i + 1).findIndex((q) => !giSkipped.has(q.tag) && !stories.some((s) => s.source === "interview" && s.interviewTag === q.tag));
+    i = rest === -1 ? -1 : i + 1 + rest;
+  }
+  giIndex = i;
+  const done = STANDARD_QUESTIONS.filter((q) => stories.some((s) => s.source === "interview" && s.interviewTag === q.tag)).length;
+  $("giProgress").textContent = `${done} of ${STANDARD_QUESTIONS.length} answered`;
+  const active = i !== -1;
+  $("giQuestion").textContent = active ? STANDARD_QUESTIONS[i].q : "All questions answered or skipped. Edit the stories below, then Save.";
+  $("giAnswer").style.display = active ? "" : "none";
+  $("giSave").disabled = !active; $("giSkip").disabled = !active;
+}
+
 async function save() {
   const partial = {};
   for (const f of fields) partial[f] = $(f).value.trim();
@@ -83,7 +102,25 @@ async function save() {
   if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-opus-5-5";
   stories = s.stories || [];
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
-  renderStories(); renderLikely(); renderSessions(); renderDiag();
+  renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview();
+  $("giSkip").onclick = () => { giSkipped.add(STANDARD_QUESTIONS[giIndex].tag); $("giAnswer").value = ""; renderInterview(); };
+  $("giSave").onclick = async () => {
+    const st = $("giStatus");
+    const answer = $("giAnswer").value.trim();
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (answer.split(/\s+/).length < 15) { st.textContent = "Give a bit more detail (a few sentences)."; return; }
+    const q = STANDARD_QUESTIONS[giIndex];
+    st.textContent = "Tidying into a story card…"; $("giSave").disabled = true;
+    try {
+      const card = await storyFromAnswer({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, question: q.q, tag: q.tag, answer });
+      stories.push({ ...card, source: "interview", interviewTag: q.tag, missing: undefined,
+        result: card.missing?.length ? `${card.result}\n\nStill missing: ${card.missing.join("; ")}` : card.result });
+      $("giAnswer").value = "";
+      st.textContent = `Saved "${card.title}". Remember to click Save at the bottom.`;
+      renderStories(); renderInterview();
+    } catch (e) { st.textContent = e.message; }
+    finally { $("giSave").disabled = false; }
+  };
   $("btnClearDiag").onclick = async () => { await chrome.storage.local.set({ diag: [] }); renderDiag(); };
 
   $("btnMic").onclick = async () => {
@@ -111,7 +148,7 @@ async function save() {
         apiKey: $("anthropicKey").value.trim(), model: $("model").value.trim(),
         cvText: $("cvText").value, jobDescription: $("jobDescription").value,
       });
-      stories = [...stories, ...out.stories];
+      stories = [...stories, ...out.stories.map((s) => ({ ...s, source: "cv" }))];
       likely = out.likely_questions;
       renderStories(); renderLikely();
       st.textContent = `Drafted ${out.stories.length} stories. Edit them, then Save.`;

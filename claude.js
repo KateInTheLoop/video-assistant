@@ -1,5 +1,6 @@
 // Raw Messages API calls. No bundler in this extension, so we use fetch directly.
 import { buildHintRequest } from "./lib/hintRequest.js";
+import { STORY_FROM_ANSWER_SCHEMA } from "./lib/storyInterview.js";
 
 const API = "https://api.anthropic.com/v1/messages";
 
@@ -67,6 +68,25 @@ export async function extractStories({ apiKey, model, cvText, jobDescription }) 
 Draft only what the CV supports. Where the CV is vague, keep the draft short and mark what the candidate needs to fill in; the candidate will edit every story in their own words before using it.
 Then, given the job description, list the questions most likely to come up. Respond only with the JSON object.`,
     messages: [{ role: "user", content: `# CV\n${cvText}\n\n# Job description\n${jobDescription || "(none provided)"}` }],
+  }, ["server-side-fallback-2026-07-01"]);
+  return data;
+}
+
+// --- Prep: turn a typed interview answer into a story ------------------------
+
+export async function storyFromAnswer({ apiKey, model, question, tag, answer }) {
+  const { data } = await call(apiKey, {
+    model,
+    max_tokens: 4000,
+    output_config: { format: { type: "json_schema", schema: STORY_FROM_ANSWER_SCHEMA } },
+    fallbacks: "default",
+    system: `You turn a candidate's spoken-style answer into a STAR story card for their own notes.
+Keep their words and their facts. Tighten, do not embellish, never add outcomes or numbers they did not state.
+Point out what is missing so they can fill it in. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `Question (${tag}): ${question}
+
+Candidate's answer:
+${answer}` }],
   }, ["server-side-fallback-2026-07-01"]);
   return data;
 }

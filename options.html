@@ -56,6 +56,19 @@
   <span id="extractStatus" class="status"></span>
 </div>
 
+<h2>Guided story interview</h2>
+<small>Ten standard behavioral questions. Answer each the way you would say it out loud; Claude tidies it into a story card without adding anything. Skip any you have no story for.</small>
+<div class="story-card">
+  <div id="giProgress" class="status"></div>
+  <p id="giQuestion" style="font-size:16px"></p>
+  <textarea id="giAnswer" placeholder="Type or paste your answer in your own words"></textarea>
+  <div class="actions">
+    <button id="giSave" class="primary">Save as story</button>
+    <button id="giSkip">Skip</button>
+    <span id="giStatus" class="status"></span>
+  </div>
+</div>
+
 <h2>Story bank</h2>
 <small>These are the only things hints will point at. Edit them until they sound like you. Add stories the CV doesn't show: a failure, a conflict, a time you changed your mind.</small>
 <div id="stories"></div>

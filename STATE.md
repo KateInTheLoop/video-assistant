@@ -19,7 +19,7 @@
 | M3.3 | done | follow_up flag in schema/validator; last hint passed in user message (cache prefix unchanged, tested); panel tags follow-ups |
 | M3.4 | done | isKeyword(): ≤3 words, no punctuation, no I/you/we, no say/mention/explain; prompt rule matches; tests |
 | M3.5 | done | Settings model dropdown: opus-5-5 (default) / sonnet-5-5 / haiku-5-5, stored and used by getHint |
-| M4.1 | todo | |
+| M4.1 | done | lib/storyInterview.js (10 questions, strict schema, nextIndex), claude.storyFromAnswer, Settings guided interview UI; stories tagged source=interview/cv |
 | M4.2 | todo | |
 | M4.3 | todo | |
 | M5.1 | todo | |
@@ -34,7 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
-- 2026-10-21 00:30 tick 7: M3.4, M3.5 done; milestone M3 complete. 30 tests green. No human feedback yet.
+- 2026-10-21 00:30 tick 7: M3.4, M3.5, M4.1 done; milestone M3 complete. 33 tests green. No human feedback yet.
 - 2026-10-21 00:10 tick 6: M3.2, M3.3 done. 29 tests green. No human feedback yet.
 - 2026-10-20 23:50 tick 5: M3.1 done. 22 tests green. No human feedback yet.
 - 2026-10-20 23:30 tick 4: M2.2, M2.3, M2.4 done; milestone M2 complete. No human feedback yet.
