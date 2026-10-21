@@ -22,6 +22,7 @@ let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
 const scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
+let lastHint = null;                 // last validated hint, so follow-ups keep the same story
 let talkStart = null, talkTimer = null;
 let sessionStart = null;
 
@@ -97,12 +98,12 @@ async function requestHint() {
   try {
     res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
-      stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
+      stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText, lastHint,
     });
     const { ok, errors, hint } = validateHint(res.hint, settings.stories.map((s) => s.title));
     if (errors.length) console.warn("hint validator:", errors);
     if (!ok) throw new Error("Hint rejected by validator; see console.");
-    if (hint.is_question) renderHint(hint);
+    if (hint.is_question) { renderHint(hint); lastHint = hint; }
     const cached = res.usage.cache_read_input_tokens ? ", cached" : "";
     setStatus(`Hint in ${Math.round(res.ms)} ms${cached}`);
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
@@ -123,7 +124,7 @@ async function recordDiag(info) {
 
 function renderHint(h) {
   ui.hint.classList.remove("empty");
-  ui.qtype.textContent = h.question_type;
+  ui.qtype.textContent = h.follow_up ? `${h.question_type} · follow-up, same story` : h.question_type;
   ui.question.textContent = h.question_summary;
   ui.stories.innerHTML = "";
   for (const s of h.stories) {

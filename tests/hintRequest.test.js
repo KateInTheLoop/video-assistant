@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHintRequest } from "../lib/hintRequest.js";
+import { buildHintRequest, lastHintText } from "../lib/hintRequest.js";
 
 const ctx = { model: "claude-opus-5-5", stories: [{ title: "A", situation: "s", action: "a", result: "r" }], jobDescription: "JD", cvText: "CV" };
 
@@ -19,4 +19,14 @@ test("uses structured output with the hint schema and low effort", () => {
   assert.equal(r.output_config.format.type, "json_schema");
   assert.equal(r.output_config.effort, "low");
   assert.equal(r.fallbacks, "default");
+});
+
+test("last hint goes into the user message, never the cached system prefix", () => {
+  const lastHint = { is_question: true, question_summary: "Conflict with manager", question_type: "behavioral", stories: [{ title: "A", cue: "c" }], keywords: ["listen", "data"] };
+  const a = buildHintRequest({ ...ctx, transcript: [], lastHint });
+  const b = buildHintRequest({ ...ctx, transcript: [], lastHint: null });
+  assert.deepEqual(a.system, b.system);
+  assert.match(a.messages[0].content, /Conflict with manager .*stories: A; keywords: listen, data/);
+  assert.match(b.messages[0].content, /Previous hint shown to the candidate: \(none\)/);
+  assert.equal(lastHintText({ is_question: false }), "(none)");
 });

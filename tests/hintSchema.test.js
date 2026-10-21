@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateHint, HINT_SCHEMA } from "../lib/hintSchema.js";
 
 const bank = ["Billing migration", "Team lead at Acme"];
-const good = { is_question: true, question_summary: "Time you handled conflict", question_type: "behavioral",
+const good = { is_question: true, follow_up: false, question_summary: "Time you handled conflict", question_type: "behavioral",
   stories: [{ title: "Team lead at Acme", cue: "the designer disagreement" }], keywords: ["listen first", "data", "compromise"], watch_out: "" };
 
 test("accepts a well-formed hint", () => {
@@ -36,4 +36,10 @@ test("rejects wrong shape", () => {
 test("schema requires every field and forbids extras", () => {
   assert.equal(HINT_SCHEMA.additionalProperties, false);
   assert.deepEqual(HINT_SCHEMA.required.sort(), Object.keys(HINT_SCHEMA.properties).sort());
+});
+
+test("follow_up passes through and defaults to false", () => {
+  assert.equal(validateHint({ ...good, follow_up: true }, bank).hint.follow_up, true);
+  const { follow_up, ...noFlag } = good;
+  assert.equal(validateHint(noFlag, bank).hint.follow_up, false);
 });
