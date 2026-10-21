@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interview Coach</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header>
+  <div class="controls">
+    <button id="btnTab" class="primary">1. Capture call audio</button>
+    <button id="btnMic">2. Capture my mic</button>
+    <button id="btnStop" disabled>Stop</button>
+    <a href="options.html" target="_blank" class="link">Settings</a>
+  </div>
+  <div id="status" class="status">Idle. Capture the meeting tab (tick "share tab audio"), then your mic.</div>
+</header>
+
+<section id="hint" class="hint empty">
+  <div class="qtype" id="qtype"></div>
+  <div class="question" id="question">Waiting for a question…</div>
+  <div class="stories" id="stories"></div>
+  <div class="keywords" id="keywords"></div>
+  <div class="watch" id="watch"></div>
+</section>
+
+<section class="pace">
+  <span>You've been talking <b id="talk">0s</b></span>
+  <span id="paceWarn"></span>
+</section>
+
+<section id="transcript" class="transcript"></section>
+
+<script type="module" src="panel.js"></script>
+</body>
+</html>

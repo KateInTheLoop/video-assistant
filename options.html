@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interview Coach – Settings</title>
+<link rel="stylesheet" href="panel.css">
+<style>
+  body { height: auto; padding: 20px 28px; max-width: 900px; }
+  h2 { margin: 26px 0 8px; font-size: 17px; }
+  label { display: block; color: var(--muted); font-size: 13px; margin: 10px 0 4px; }
+  input, textarea, select { width: 100%; background: var(--panel); color: var(--fg); border: 1px solid #343949; border-radius: 6px; padding: 8px; font: inherit; }
+  textarea { min-height: 120px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .story-card { background: var(--panel); border: 1px solid #262a35; border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .story-card .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .story-card textarea { min-height: 70px; }
+  .actions { display: flex; gap: 8px; margin: 14px 0; align-items: center; }
+  .session { background: var(--panel); padding: 10px; margin: 8px 0; border-radius: 6px; font-size: 14px; }
+  .session pre { white-space: pre-wrap; color: var(--muted); max-height: 200px; overflow: auto; }
+  small { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Interview Coach settings</h1>
+
+<h2>Keys</h2>
+<div class="row">
+  <div><label>Anthropic API key</label><input id="anthropicKey" type="password" placeholder="sk-ant-..."></div>
+  <div><label>Deepgram API key (speech to text)</label><input id="deepgramKey" type="password"></div>
+</div>
+<div class="row">
+  <div><label>Claude model</label><input id="model" value="claude-opus-5-5"></div>
+  <div><label>Your first name (shown in transcript)</label><input id="candidateName"></div>
+</div>
+<small>Keys are stored in this extension's local storage only. Transcripts never leave this machine; only the recent transcript text is sent to Claude for hints and audio goes to Deepgram for transcription.</small>
+
+<h2>CV and job</h2>
+<label>CV (paste as plain text)</label>
+<textarea id="cvText" placeholder="Paste your CV here"></textarea>
+<label>Job description for the upcoming interview</label>
+<textarea id="jobDescription" placeholder="Paste the job posting"></textarea>
+<div class="actions">
+  <button id="btnExtract" class="primary">Draft stories from CV with Claude</button>
+  <span id="extractStatus" class="status"></span>
+</div>
+
+<h2>Story bank</h2>
+<small>These are the only things hints will point at. Edit them until they sound like you. Add stories the CV doesn't show: a failure, a conflict, a time you changed your mind.</small>
+<div id="stories"></div>
+<div class="actions">
+  <button id="btnAddStory">Add a story</button>
+</div>
+
+<h2>Likely questions</h2>
+<ul id="likely"></ul>
+
+<div class="actions">
+  <button id="btnSave" class="primary">Save</button>
+  <span id="saveStatus" class="status"></span>
+</div>
+
+<h2>Past sessions</h2>
+<div id="sessions"></div>
+
+<script type="module" src="options.js"></script>
+</body>
+</html>
