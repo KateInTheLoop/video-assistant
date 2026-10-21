@@ -29,7 +29,12 @@
   <div><label>Deepgram API key (speech to text)</label><input id="deepgramKey" type="password"></div>
 </div>
 <div class="row">
-  <div><label>Claude model</label><input id="model" value="claude-opus-5-5"></div>
+  <div><label>Claude model</label>
+    <select id="model">
+      <option value="claude-opus-5-5">Claude Opus 5.5 — best judgement (default)</option>
+      <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — balanced</option>
+      <option value="claude-haiku-5-5">Claude Haiku 5.5 — fastest, cheapest</option>
+    </select></div>
   <div><label>Your first name (shown in transcript)</label><input id="candidateName"></div>
 </div>
 <small>Keys are stored in this extension's local storage only. Transcripts never leave this machine; only the recent transcript text is sent to Claude for hints and audio goes to Deepgram for transcription.</small>

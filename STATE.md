@@ -17,8 +17,8 @@
 | M3.1 | done | lib/hintRequest.js (pure request builder, test proves stable cached prefix), lib/diag.js ring buffer, Settings → Diagnostics shows latency + cache reads. Live cache-hit confirmation still needs a real run (M6.1) |
 | M3.2 | done | lib/scheduler.js HintScheduler: coalesce fragments, 2 s min gap, no overlap, candidate speech clears pending; 5 tests; panel uses it |
 | M3.3 | done | follow_up flag in schema/validator; last hint passed in user message (cache prefix unchanged, tested); panel tags follow-ups |
-| M3.4 | todo | |
-| M3.5 | todo | |
+| M3.4 | done | isKeyword(): ≤3 words, no punctuation, no I/you/we, no say/mention/explain; prompt rule matches; tests |
+| M3.5 | done | Settings model dropdown: opus-5-5 (default) / sonnet-5-5 / haiku-5-5, stored and used by getHint |
 | M4.1 | todo | |
 | M4.2 | todo | |
 | M4.3 | todo | |
@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 00:30 tick 7: M3.4, M3.5 done; milestone M3 complete. 30 tests green. No human feedback yet.
 - 2026-10-21 00:10 tick 6: M3.2, M3.3 done. 29 tests green. No human feedback yet.
 - 2026-10-20 23:50 tick 5: M3.1 done. 22 tests green. No human feedback yet.
 - 2026-10-20 23:30 tick 4: M2.2, M2.3, M2.4 done; milestone M2 complete. No human feedback yet.

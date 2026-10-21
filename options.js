@@ -80,6 +80,7 @@ async function save() {
 (async () => {
   const s = await loadSettings();
   for (const f of fields) $(f).value = s[f] || "";
+  if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-opus-5-5";
   stories = s.stories || [];
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
   renderStories(); renderLikely(); renderSessions(); renderDiag();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateHint, HINT_SCHEMA } from "../lib/hintSchema.js";
+import { validateHint, HINT_SCHEMA, isKeyword } from "../lib/hintSchema.js";
 
 const bank = ["Billing migration", "Team lead at Acme"];
 const good = { is_question: true, follow_up: false, question_summary: "Time you handled conflict", question_type: "behavioral",
@@ -42,4 +42,9 @@ test("follow_up passes through and defaults to false", () => {
   assert.equal(validateHint({ ...good, follow_up: true }, bank).hint.follow_up, true);
   const { follow_up, ...noFlag } = good;
   assert.equal(validateHint(noFlag, bank).hint.follow_up, false);
+});
+
+test("isKeyword accepts cues and rejects readable lines", () => {
+  for (const k of ["listen first", "data", "STAR", "2x throughput", "trade-offs"]) assert.equal(isKeyword(k), true, k);
+  for (const k of ["Say you listened first", "you should mention data", "listen, then act", "Highlight the result", "I would compromise", "a b c d", "Explain: tradeoffs"]) assert.equal(isKeyword(k), false, k);
 });
