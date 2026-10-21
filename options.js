@@ -136,8 +136,8 @@ async function save() {
       stories.push({ ...card, source: "interview", interviewTag: q.tag, missing: undefined,
         result: card.missing?.length ? `${card.result}\n\nStill missing: ${card.missing.join("; ")}` : card.result });
       $("giAnswer").value = "";
-      st.textContent = `Saved "${card.title}". Remember to click Save at the bottom.`;
-      renderStories(); renderInterview();
+      renderStories(); renderInterview(); await save();
+      st.textContent = `Saved "${card.title}".`;
     } catch (e) { st.textContent = e.message; }
     finally { $("giSave").disabled = false; }
   };
@@ -160,7 +160,7 @@ async function save() {
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
     if (!stories.length) { st.textContent = "Add some stories first."; return; }
     st.textContent = "Asking Claude…"; $("btnGaps").disabled = true;
-    try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); }
+    try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); await save(); }
     catch (e) { st.textContent = e.message; }
     finally { $("btnGaps").disabled = false; }
   };
@@ -177,8 +177,8 @@ async function save() {
       const { stories: incoming, likelyQuestions } = importBank(await file.text());
       const r = mergeStories(stories, incoming);
       stories = r.stories; if (likelyQuestions.length && !likely.length) likely = likelyQuestions;
-      renderStories(); renderLikely(); renderInterview();
-      $("bankStatus").textContent = `Imported ${r.added} stories (${r.skipped} duplicates skipped). Click Save.`;
+      renderStories(); renderLikely(); renderInterview(); await save();
+      $("bankStatus").textContent = `Imported ${r.added} stories (${r.skipped} duplicates skipped).`;
     } catch (e) { $("bankStatus").textContent = e.message; }
     $("importFile").value = "";
   };
@@ -198,8 +198,8 @@ async function save() {
       });
       stories = [...stories, ...out.stories.map((s) => ({ ...s, source: "cv" }))];
       likely = normalizeLikely(out.likely_questions);
-      renderStories(); renderLikely();
-      st.textContent = `Drafted ${out.stories.length} stories. Edit them, then Save.`;
+      renderStories(); renderLikely(); renderInterview(); await save();
+      st.textContent = `Drafted ${out.stories.length} stories and saved. Edit them until they sound like you (edits save when you click Save).`;
     } catch (e) { st.textContent = e.message; }
     finally { $("btnExtract").disabled = false; }
   };
