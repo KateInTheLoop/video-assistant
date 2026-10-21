@@ -164,6 +164,21 @@ function stopTalkClock() {
 
 // --- Capture -----------------------------------------------------------------
 
+// First capture of a new session: forget the previous interview so it is not appended to.
+function beginSessionIfNeeded() {
+  if (sessionStart !== null) return;
+  sessionStart = Date.now();
+  transcript = [];
+  interim = { interviewer: null, candidate: null };
+  lastHint = null;
+  scheduler.onCandidateSpeaks(); // clears any pending interviewer text
+  clearTimeout(hintTimer);
+  renderTranscript();
+  ui.hint.classList.add("empty");
+  ui.qtype.textContent = ""; ui.question.textContent = "Waiting for a question…";
+  ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
+}
+
 function sttFor(speaker) {
   const stream = new SttStream({
     apiKey: settings.deepgramKey, speaker,
@@ -183,12 +198,12 @@ async function captureTab() {
     if (!stream.getAudioTracks().length) {
       return setStatus("No audio in that share. Pick the meeting *tab* and tick 'Share tab audio'.", true);
     }
+    beginSessionIfNeeded();
     media.interviewer = stream;
     streams.interviewer = sttFor("interviewer");
     await streams.interviewer.start(stream);
     stream.getAudioTracks()[0].onended = stopAll;
     ui.tab.classList.add("active"); ui.stop.disabled = false;
-    sessionStart ??= Date.now();
     setStatus("Call audio live. Now capture your mic.");
   } catch (e) { setStatus(e.message, true); }
 }
@@ -198,6 +213,7 @@ async function captureMic() {
   if (useBuiltin && !WebSpeechStream.supported()) return setStatus("Add a Deepgram key in Settings first.", true);
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    beginSessionIfNeeded();
     media.candidate = stream;
     if (useBuiltin) {
       streams.candidate = new WebSpeechStream({ speaker: "candidate", onInterim, onFinal, onUtteranceEnd, onError: (e) => setStatus(e.message, true) });
@@ -206,7 +222,6 @@ async function captureMic() {
     }
     await streams.candidate.start(stream);
     ui.mic.classList.add("active"); ui.stop.disabled = false;
-    sessionStart ??= Date.now();
     setStatus(useBuiltin ? "Mic live via Chrome's built-in recognition (no Deepgram key). Call audio still needs a Deepgram key." : "Mic live. Good luck.");
   } catch (e) {
     if (e.name === "NotAllowedError" || e.name === "NotFoundError") {
@@ -229,11 +244,13 @@ async function stopAll() {
   ui.tab.classList.remove("active"); ui.mic.classList.remove("active"); ui.stop.disabled = true;
   if (transcript.length) {
     const end = Date.now();
-    const session = { start: sessionStart, end, lines: transcript, pace: answerStats(transcript, end), paceSummary: paceSummary(answerStats(transcript, end)) };
+    const lines = transcript;
+    const session = { start: sessionStart, end, lines, pace: answerStats(lines, end), paceSummary: paceSummary(answerStats(lines, end)) };
+    sessionStart = null;
     await appendTranscript(session);
     setStatus("Stopped. Transcript saved. Writing debrief…");
     try {
-      session.debrief = await debrief({ apiKey: settings.anthropicKey, model: settings.model, lines: transcript, stories: settings.stories });
+      session.debrief = await debrief({ apiKey: settings.anthropicKey, model: settings.model, lines, stories: settings.stories });
       await updateLastSession(session);
       setStatus("Debrief ready in Settings → Past sessions.");
     } catch (e) { setStatus(`Transcript saved; debrief failed: ${e.message}`, true); }
