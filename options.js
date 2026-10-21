@@ -70,6 +70,18 @@ async function save() {
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
   renderStories(); renderLikely(); renderSessions();
 
+  $("btnMic").onclick = async () => {
+    const st = $("micStatus");
+    st.textContent = "Requesting…";
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const label = stream.getAudioTracks()[0]?.label || "microphone";
+      stream.getTracks().forEach((t) => t.stop());
+      st.textContent = `OK: ${label}. Go back to the coach window and click "Capture my mic".`;
+    } catch (e) { st.textContent = `${e.name}: ${e.message}`; }
+  };
+  if (location.hash === "#mic") $("mic").scrollIntoView();
+
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
   $("btnSave").onclick = save;
   $("btnExtract").onclick = async () => {

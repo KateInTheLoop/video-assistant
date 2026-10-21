@@ -188,7 +188,16 @@ async function captureMic() {
     ui.mic.classList.add("active"); ui.stop.disabled = false;
     sessionStart ??= Date.now();
     setStatus("Mic live. Good luck.");
-  } catch (e) { setStatus(e.message, true); }
+  } catch (e) {
+    if (e.name === "NotAllowedError" || e.name === "NotFoundError") {
+      setStatus("", true);
+      ui.status.textContent = "Chrome blocked the microphone for this window. ";
+      const a = document.createElement("a");
+      a.href = chrome.runtime.getURL("options.html#mic"); a.target = "_blank";
+      a.textContent = "Grant it once in Settings → Test microphone, then retry.";
+      ui.status.appendChild(a);
+    } else setStatus(e.message, true);
+  }
 }
 
 async function stopAll() {
