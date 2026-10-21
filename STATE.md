@@ -25,7 +25,7 @@
 | M5.1 | done | claude.debrief (per-question story used, STAR flags, went well, improve; overall + top_fix) runs after Stop, stored on session, rendered in Settings → Past sessions |
 | M5.2 | done | lib/pace.js answerStats/paceSummary (long >120s, short <20s, wpm), 3 tests; shown per session and per question |
 | M6.1 | blocked | needs human: load extension in Chrome, run a Meet test call |
-| M6.2 | todo | |
+| M6.2 | done | docs/first-run.md: install, prep, interview day, after, troubleshooting table; screenshot placeholders |
 
 ## Needs human
 - M6.1: all code milestones are done. Load the extension unpacked (chrome://extensions → Developer mode → Load unpacked → this folder), add Anthropic + Deepgram keys in Settings, run a short Meet test call, then paste console errors/observations under "Human feedback". Check Settings → Diagnostics for non-zero cache reads on the second hint (M3.1 live confirmation).
@@ -34,6 +34,7 @@
 - (paste console errors / observations here; the agent reads this first every tick)
 
 ## Tick log
+- 2026-10-21 01:30 tick 10: M6.2 done. Only M6.1 (human smoke test) remains. No human feedback yet.
 - 2026-10-21 01:10 tick 9: M5.1, M5.2 done; milestones M0–M5 complete. 41 tests green. Waiting on M6.1 (human smoke test).
 - 2026-10-21 00:50 tick 8: M4.2, M4.3 done; milestone M4 complete. 38 tests green. No human feedback yet. (Two loop prompts fired together; handled as one tick.)
 - 2026-10-21 00:30 tick 7: M3.4, M3.5, M4.1 done; milestone M3 complete. 33 tests green. No human feedback yet.
