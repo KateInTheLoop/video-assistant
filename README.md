@@ -2,6 +2,7 @@
 
 Live captions for a video interview plus structure hints grounded in the candidate's own CV and stories.
 Not an answer generator: hints are capped at a few keywords and may only point at stories you wrote yourself.
+The optional "answer shape" panel names what a strong answer covers and the follow-ups to expect; it never writes words to read aloud.
 
 ## Install (developer mode)
 1. `chrome://extensions` → enable Developer mode → Load unpacked → pick this folder.

@@ -27,9 +27,15 @@
     <div id="hintState" class="hintState"></div>
   </div>
   <div class="question" id="question">Waiting for a question…</div>
+  <div class="gapNotice" id="gapNotice" hidden></div>
   <div class="stories" id="stories"></div>
   <div class="keywords" id="keywords"></div>
   <div class="watch" id="watch"></div>
+  <details class="shape" id="shapeBox" hidden>
+    <summary>Answer shape &amp; likely follow-ups</summary>
+    <ul class="shapeList" id="answerShape"></ul>
+    <div class="followUps" id="followUps"></div>
+  </details>
   <div class="hintActions" id="hintActions" hidden>
     <button data-act="answering" class="act">Answer this</button>
     <button data-act="later" class="act">Think about it</button>

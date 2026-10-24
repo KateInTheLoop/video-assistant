@@ -17,7 +17,8 @@ const ui = {
   keywords: $("keywords"), watch: $("watch"), transcript: $("transcript"),
   talk: $("talk"), paceWarn: $("paceWarn"),
   hintState: $("hintState"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
-  bankWarn: $("bankWarn"),
+  bankWarn: $("bankWarn"), gapNotice: $("gapNotice"),
+  shapeBox: $("shapeBox"), answerShape: $("answerShape"), followUps: $("followUps"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -137,6 +138,17 @@ async function recordDiag(info) {
   await chrome.storage.local.set({ diag: pushEntry(diag, entry) });
 }
 
+// Back to the waiting state: no question selected, nothing stale left on the card.
+function clearHintCard() {
+  ui.hint.classList.add("empty");
+  ui.hintState.textContent = "";
+  ui.hintActions.hidden = true;
+  ui.qtype.textContent = "";
+  ui.question.textContent = "Waiting for a question\u2026";
+  ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
+  ui.gapNotice.hidden = true; ui.shapeBox.hidden = true;
+}
+
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
 // arriving while the interviewer is still talking updates the last entry in place.
 function addQuestion(h) {
@@ -177,7 +189,9 @@ function renderQueue() {
 
     const text = document.createElement("span");
     text.className = "qText";
-    text.textContent = q.hint.question_summary || "(question)";
+    const gap = q.hint.is_question && !q.hint.stories.length;
+    text.textContent = `${gap ? "\u26a0 " : ""}${q.hint.question_summary || "(question)"}`;
+    if (gap) text.title = "No story in your bank fits this question";
 
     li.append(when, text);
     if (STATUS_LABEL[q.status]) {
@@ -206,12 +220,7 @@ function setQuestionStatus(q, status) {
     const next = [...questions].reverse().find((x) => x.status !== "dismissed");
     selectedId = next ? next.id : null;
     if (next) renderHint(next.hint);
-    else {
-      ui.hint.classList.add("empty");
-      ui.hintActions.hidden = true;
-      ui.qtype.textContent = ""; ui.question.textContent = "Waiting for a question\u2026";
-      ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
-    }
+    else clearHintCard();
   }
   renderQueue();
 }
@@ -237,6 +246,34 @@ function renderHint(h) {
     ui.keywords.appendChild(el);
   }
   ui.watch.textContent = h.watch_out;
+
+  // A question with no story behind it is the thing the candidate most needs to know,
+  // both live (improvise honestly, do not stall) and afterwards (a gap to prepare).
+  const noStory = h.is_question && !h.stories.length;
+  ui.gapNotice.hidden = !noStory;
+  if (noStory) {
+    ui.gapNotice.textContent = settings.stories?.length
+      ? "No story in your bank fits this one \u2014 answer from memory, and add a story for it afterwards."
+      : "Your story bank is empty, so there is nothing to point at. Hints stay generic until you add stories.";
+  }
+
+  const shape = h.answer_shape || [];
+  const ups = h.follow_ups || [];
+  ui.answerShape.innerHTML = "";
+  for (const s of shape) {
+    const li = document.createElement("li");
+    li.textContent = s;
+    ui.answerShape.appendChild(li);
+  }
+  ui.followUps.innerHTML = "";
+  for (const f of ups) {
+    const d = document.createElement("div");
+    d.className = "fu";
+    d.textContent = `\u2192 ${f}`;
+    ui.followUps.appendChild(d);
+  }
+  ui.shapeBox.hidden = !(shape.length || ups.length);
+
   ui.hintActions.hidden = false;
 }
 
@@ -254,12 +291,27 @@ function setHintState(text, isError = false) {
   ui.hintState.className = `hintState${isError ? " error" : ""}`;
 }
 
+// Questions that had no story behind them: the candidate's prep list for next time.
+function gapQuestions() {
+  return questions.filter((q) => q.hint.is_question && !q.hint.stories.length).map((q) => q.hint.question_summary);
+}
+
+function reportGaps() {
+  const gaps = gapQuestions();
+  if (!gaps.length) return;
+  setStatus(`${gaps.length} question${gaps.length === 1 ? "" : "s"} had no matching story. Saved with the transcript \u2014 add stories for them in Settings.`, true);
+}
+
 // Full conversation to a text file the candidate keeps.
 function saveTranscript() {
   if (!transcript.length) return;
   const header = `Interview transcript\n${new Date(sessionStart || Date.now()).toLocaleString()}\n\n`;
   const body = transcript.map((l) => `${l.speaker === "interviewer" ? "Interviewer" : (settings.candidateName || "You")}: ${l.text}`).join("\n");
-  const blob = new Blob([header + body + "\n"], { type: "text/plain" });
+  const gaps = gapQuestions();
+  const gapBlock = gaps.length
+    ? `\n--- Questions with no matching story (add these to your bank) ---\n${gaps.map((g) => `- ${g}`).join("\n")}\n`
+    : "";
+  const blob = new Blob([header + body + "\n" + gapBlock], { type: "text/plain" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `interview-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`;
@@ -297,11 +349,7 @@ function beginSessionIfNeeded() {
   questions = []; selectedId = null;
   renderTranscript();
   renderQueue();
-  ui.hint.classList.add("empty");
-  ui.hintState.textContent = "";
-  ui.hintActions.hidden = true;
-  ui.qtype.textContent = ""; ui.question.textContent = "Waiting for a question…";
-  ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
+  clearHintCard();
 }
 
 // The key for whichever STT provider is selected in Settings.
@@ -386,6 +434,7 @@ async function stopAll() {
       setStatus("Debrief ready in Settings → Past sessions.");
     } catch (e) { setStatus(`Transcript saved; debrief failed: ${e.message}`, true); }
   } else setStatus("Stopped.");
+  reportGaps();
   sessionStart = null;
 }
 
