@@ -69,8 +69,13 @@ test("end to end: a .docx becomes normalised CV text", async () => {
   assert.equal(await cvTextFromFile({ name: "cv.docx", bytes: docx }), "Jane Doe\n- Bank reconciliations");
 });
 
+test("end to end: an .odt becomes normalised CV text", async () => {
+  const odt = buildZip([{ name: "content.xml", text: `<office:text><text:h>Jane Doe</text:h><text:list-item><text:p>Accruals</text:p></text:list-item></office:text>`, deflate: true }]);
+  assert.equal(await cvTextFromFile({ name: "cv.odt", bytes: odt }), "Jane Doe\n- Accruals");
+});
+
 test("text files pass straight through normalisation; pdf without an extractor is refused", async () => {
   assert.equal(await cvTextFromFile({ name: "cv.md", bytes: new TextEncoder().encode("# Jane\n\n\n\nskills") }), "# Jane\n\nskills");
   await assert.rejects(cvTextFromFile({ name: "cv.pdf", bytes: new Uint8Array() }), /Anthropic key/);
-  await assert.rejects(cvTextFromFile({ name: "cv.doc", bytes: new Uint8Array() }), /Unsupported file type/);
+  await assert.rejects(cvTextFromFile({ name: "cv.doc", bytes: new Uint8Array() }), /Save As/);
 });

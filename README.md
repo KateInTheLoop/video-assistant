@@ -8,14 +8,23 @@ The optional "answer shape" panel names what a strong answer covers and the foll
 1. `chrome://extensions` → enable Developer mode → Load unpacked → pick this folder.
 2. Click the extension icon → the coach opens as its own window. Drag it to the second monitor.
 3. Open Settings (link in the window header): add an Anthropic API key and a Deepgram API key,
-   upload the CV (PDF, DOCX, TXT or MD) or paste it, paste the job description, click "Draft stories from CV", edit the stories.
-   DOCX and text files are parsed locally; a PDF is transcribed by Claude once (a few seconds) and lands as editable text.
+   upload the CV or paste it, paste the job description, click "Draft stories from CV", edit the stories.
 
 ## Use
 1. Join the interview in Meet / Zoom web / Teams web in a Chrome tab.
 2. In the coach window click **Capture call audio**, choose the meeting *tab* and tick **Share tab audio**.
 3. Click **Capture my mic**.
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
+
+## CV formats
+| Format | How it is read | Leaves the machine? |
+|---|---|---|
+| PDF | Transcribed once by Claude Haiku (a few seconds, ~2k tokens per page) | The PDF goes to Anthropic once |
+| DOCX, ODT | Parsed locally: the ZIP is opened with the browser's own inflater and the XML turned into text | No |
+| TXT, MD | Read directly | No |
+| .doc, .rtf, .pages, Google Docs | Not readable here: download or save as .docx or PDF first | - |
+
+Whatever the source, the CV becomes compact plain text in Settings, which you can check and edit. Plain text rather than JSON on purpose: a CV has no structure worth the ~30% token overhead, and the structured artefact is the story bank. The text sits in the cached prompt prefix, so it costs full price only on the first hint of a session.
 
 ## Notes
 - Tab-audio capture works on every OS. Whole-system audio capture only works on Windows and ChromeOS, so tab capture is the default.

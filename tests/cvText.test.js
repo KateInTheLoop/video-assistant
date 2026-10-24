@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeCvText, docxXmlToText, cvFileKind, MAX_CV_CHARS } from "../lib/cvText.js";
+import { normalizeCvText, docxXmlToText, odtXmlToText, cvFileKind, unsupportedCvMessage, MAX_CV_CHARS } from "../lib/cvText.js";
 
 test("normalize collapses whitespace, blank runs and bullet glyphs", () => {
   const raw = "Jane Doe\r\n\r\n\r\n•  Owned month-end close   \n● Built accrual schedule\n\n\n\nSkills:\tExcel";
@@ -37,6 +37,27 @@ test("file kind is decided by extension, case-insensitively", () => {
   assert.equal(cvFileKind("resume.docx"), "docx");
   assert.equal(cvFileKind("notes.md"), "text");
   assert.equal(cvFileKind("cv.txt"), "text");
-  assert.equal(cvFileKind("old.doc"), "unsupported");
+  assert.equal(cvFileKind("cv.odt"), "odt");
+  assert.equal(cvFileKind("old.doc"), "doc-legacy");
+  assert.equal(cvFileKind("cv.rtf"), "unsupported-reexport");
   assert.equal(cvFileKind("photo.png"), "unsupported");
+});
+
+test("odt xml: headings, paragraphs, tabs, spaces, breaks, list items, annotations dropped", () => {
+  const xml = `<office:document-content><office:body><office:text>
+    <text:h text:outline-level="1">Jane Doe</text:h>
+    <text:p>Senior<text:s text:c="2"/>Accountant<text:tab/>London</text:p>
+    <text:list><text:list-item><text:p>Cut close<text:line-break/>9 to 5 days</text:p></text:list-item></text:list>
+    <text:p>R&amp;D<office:annotation><text:p>ignore me</text:p></office:annotation> team</text:p>
+    <text:p text:style-name="Standard"/>
+    <text:p>after a blank</text:p>
+  </office:text></office:body></office:document-content>`;
+  assert.equal(odtXmlToText(xml), "Jane Doe\nSenior  Accountant\tLondon\n- Cut close\n9 to 5 days\nR&D team\n\nafter a blank");
+});
+
+test("unsupported files get a message that says what to do instead", () => {
+  assert.match(unsupportedCvMessage("cv.doc"), /Save As.*\.docx/);
+  assert.match(unsupportedCvMessage("cv.doc"), /Google Docs/);
+  assert.match(unsupportedCvMessage("cv.rtf"), /PDF or \.docx/);
+  assert.match(unsupportedCvMessage("cv.png"), /PDF, DOCX, ODT, TXT or MD/);
 });
