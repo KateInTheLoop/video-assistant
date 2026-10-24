@@ -5,12 +5,13 @@ import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
 import { validateSettings } from "./lib/settings.js";
 import { checkDeepgramKey } from "./stt.js";
+import { checkAssemblyAiKey } from "./stt-assemblyai.js";
 import { checkAnthropicKey } from "./claude.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fields = ["anthropicKey", "deepgramKey", "model", "candidateName", "cvText", "jobDescription"];
-const KEY_FIELDS = ["anthropicKey", "deepgramKey"];
+const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "candidateName", "cvText", "jobDescription"];
+const KEY_FIELDS = ["anthropicKey", "deepgramKey", "assemblyaiKey"];
 let stories = [];
 let likely = [];
 
@@ -114,7 +115,7 @@ function renderInterview() {
 async function showKeyStatus() {
   const s = await loadSettings();
   $("keyStatus").textContent = KEY_FIELDS.map((f) => {
-    const label = f === "anthropicKey" ? "Anthropic" : "Deepgram";
+    const label = f === "anthropicKey" ? "Anthropic" : f === "deepgramKey" ? "Deepgram" : "AssemblyAI";
     return s[f] ? `${label} key saved (ends …${s[f].slice(-4)})` : `${label} key NOT saved`;
   }).join("  ·  ");
 }
@@ -235,6 +236,13 @@ async function load() {
     const r = await checkAnthropicKey($("anthropicKey").value.trim());
     st.className = r.ok ? "status" : "status error";
     st.textContent = `Anthropic: ${r.reason}`;
+  };
+  $("btnTestAssemblyai").onclick = async () => {
+    const st = $("keyStatus");
+    st.className = "status"; st.textContent = "Checking with AssemblyAI\u2026";
+    const r = await checkAssemblyAiKey($("assemblyaiKey").value.trim());
+    st.className = r.ok ? "status" : "status error";
+    st.textContent = `AssemblyAI: ${r.reason}`;
   };
   $("btnTestDeepgram").onclick = async () => {
     const st = $("keyStatus");

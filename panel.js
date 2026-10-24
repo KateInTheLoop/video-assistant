@@ -1,5 +1,6 @@
 import { loadSettings, appendTranscript, updateLastSession } from "./storage.js";
 import { SttStream } from "./stt.js";
+import { AssemblyAiStream } from "./stt-assemblyai.js";
 import { WebSpeechStream } from "./webspeech.js";
 import { getHint, debrief } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
@@ -243,18 +244,23 @@ function beginSessionIfNeeded() {
   ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
 }
 
+// The key for whichever STT provider is selected in Settings.
+function sttKey() {
+  return settings.sttProvider === "assemblyai" ? settings.assemblyaiKey : settings.deepgramKey;
+}
+function sttProviderName() {
+  return settings.sttProvider === "assemblyai" ? "AssemblyAI" : "Deepgram";
+}
+
 function sttFor(speaker) {
-  const stream = new SttStream({
-    apiKey: settings.deepgramKey, speaker,
-    onInterim, onFinal, onUtteranceEnd,
-    onError: (e) => setStatus(e.message, true),
-  });
+  const opts = { apiKey: sttKey(), speaker, onInterim, onFinal, onUtteranceEnd, onError: (e) => setStatus(e.message, true) };
+  const stream = settings.sttProvider === "assemblyai" ? new AssemblyAiStream(opts) : new SttStream(opts);
   stream.onStatus = (msg) => setStatus(msg);
   return stream;
 }
 
 async function captureTab() {
-  if (!settings.deepgramKey) return setStatus("Add a Deepgram key in Settings first.", true);
+  if (!sttKey()) return setStatus(`Add a ${sttProviderName()} key in Settings first.`, true);
   try {
     // Chrome requires video:true to offer the "share tab audio" checkbox; we drop the video track.
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, selfBrowserSurface: "exclude" });
@@ -273,7 +279,8 @@ async function captureTab() {
 }
 
 async function captureMic() {
-  const useBuiltin = !settings.deepgramKey;
+  const useBuiltin = !sttKey() && settings.sttProvider !== "assemblyai";
+  if (!sttKey() && settings.sttProvider === "assemblyai") return setStatus("Add an AssemblyAI key in Settings first.", true);
   if (useBuiltin && !WebSpeechStream.supported()) return setStatus("Add a Deepgram key in Settings first.", true);
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
@@ -326,7 +333,7 @@ async function stopAll() {
 
 (async () => {
   settings = await loadSettings();
-  if (!settings.anthropicKey || !settings.deepgramKey) setStatus("Add your API keys in Settings before starting.", true);
+  if (!settings.anthropicKey || !sttKey()) setStatus("Add your API keys in Settings before starting.", true);
   else if (!settings.stories.length) setStatus("No stories yet. Paste your CV in Settings so hints can point at your own experience.", true);
   chrome.storage.onChanged.addListener(async () => { settings = await loadSettings(); });
   ui.tab.onclick = captureTab;

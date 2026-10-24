@@ -6,6 +6,7 @@ const good = {
   anthropicKey: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123",
   deepgramKey: "0123456789abcdef0123456789abcdef01234567",
   model: "claude-opus-5-5",
+  sttProvider: "deepgram",
   candidateName: " Kate ",
   cvText: "CV",
   jobDescription: "JD",
@@ -45,4 +46,15 @@ test("unknown model is reported", () => {
 test("a 32-char Deepgram key ID is rejected with an explanation", () => {
   const { errors } = validateSettings({ ...good, deepgramKey: "ccf58b9cd80a482a909587b7d02c2206" });
   assert.match(errors.deepgramKey, /key ID/);
+});
+
+test("a valid AssemblyAI key passes; a wrong-length one is reported", () => {
+  const good32 = "ccf58b9cd80a482a909587b7d02c2206";
+  assert.deepEqual(validateSettings({ ...good, assemblyaiKey: good32 }).errors, {});
+  assert.ok(validateSettings({ ...good, assemblyaiKey: "tooshort" }).errors.assemblyaiKey);
+});
+
+test("sttProvider is validated and defaults to deepgram", () => {
+  assert.equal(validateSettings({ ...good, sttProvider: "assemblyai" }).values.sttProvider, "assemblyai");
+  assert.equal(validateSettings({ ...good, sttProvider: "bogus" }).values.sttProvider, "deepgram");
 });

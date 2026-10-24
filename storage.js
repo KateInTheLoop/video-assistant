@@ -1,6 +1,8 @@
 export const DEFAULTS = {
   anthropicKey: "",
   deepgramKey: "",
+  assemblyaiKey: "",
+  sttProvider: "deepgram",   // "deepgram" | "assemblyai"
   model: "claude-opus-5-5",
   cvText: "",
   jobDescription: "",
