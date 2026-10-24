@@ -3,10 +3,14 @@ import { extractStories, storyFromAnswer, gapReport } from "./claude.js";
 import { exportBank, importBank, mergeStories, normalizeLikely } from "./lib/bank.js";
 import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
+import { validateSettings } from "./lib/settings.js";
+import { checkDeepgramKey } from "./stt.js";
+import { checkAnthropicKey } from "./claude.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fields = ["anthropicKey", "deepgramKey", "model", "candidateName", "cvText", "jobDescription"];
+const KEY_FIELDS = ["anthropicKey", "deepgramKey"];
 let stories = [];
 let likely = [];
 
@@ -106,23 +110,63 @@ function renderInterview() {
   $("giSave").disabled = !active; $("giSkip").disabled = !active;
 }
 
-async function save() {
-  const partial = {};
-  for (const f of fields) partial[f] = $(f).value.trim();
-  partial.stories = stories.filter((s) => s.title?.trim());
-  partial.likelyQuestions = likely;
-  await saveSettings(partial);
-  $("saveStatus").textContent = "Saved.";
-  setTimeout(() => ($("saveStatus").textContent = ""), 1500);
+// Reads the keys back from storage, so the page shows what was actually saved.
+async function showKeyStatus() {
+  const s = await loadSettings();
+  $("keyStatus").textContent = KEY_FIELDS.map((f) => {
+    const label = f === "anthropicKey" ? "Anthropic" : "Deepgram";
+    return s[f] ? `${label} key saved (ends …${s[f].slice(-4)})` : `${label} key NOT saved`;
+  }).join("  ·  ");
 }
 
-(async () => {
+// Writes the fields that pass validation and returns errors for the rest.
+// A field that fails keeps whatever was stored before.
+async function save() {
+  const form = {};
+  for (const f of fields) form[f] = $(f).value;
+  const { values, errors } = validateSettings(form);
+  await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely });
+  return errors;
+}
+
+// The Save button: validate, store, then reload the page from storage so it shows what is really saved.
+async function saveAndRefresh() {
+  const problems = Object.values(await save());
+  await load();
+  const st = $("saveStatus");
+  st.className = problems.length ? "status error" : "status";
+  st.textContent = problems.length
+    ? `Not saved: ${problems.join("; ")}. The stored value is shown below.`
+    : "Saved. Everything below is what is stored.";
+}
+
+// Every edit is saved as you go, so nothing is lost if Save is never clicked.
+// Debounced: one storage write per pause in typing, not one per keystroke.
+let autosaveTimer = null;
+document.addEventListener("input", () => {
+  $("saveStatus").className = "status";
+  $("saveStatus").textContent = "Saving…";
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    const problems = Object.values(await save());
+    const st = $("saveStatus");
+    st.className = problems.length ? "status error" : "status";
+    st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
+    showKeyStatus();
+  }, 600);
+});
+
+async function load() {
   const s = await loadSettings();
   for (const f of fields) $(f).value = s[f] || "";
   if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-opus-5-5";
   stories = s.stories || [];
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
-  renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview();
+  renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus();
+}
+
+(async () => {
+  await load();
   $("giSkip").onclick = () => { giSkipped.add(STANDARD_QUESTIONS[giIndex].tag); $("giAnswer").value = ""; renderInterview(); };
   $("giSave").onclick = async () => {
     const st = $("giStatus");
@@ -184,7 +228,21 @@ async function save() {
   };
 
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
-  $("btnSave").onclick = save;
+  $("btnSave").onclick = saveAndRefresh;
+  $("btnTestAnthropic").onclick = async () => {
+    const st = $("keyStatus");
+    st.className = "status"; st.textContent = "Checking with Anthropic\u2026";
+    const r = await checkAnthropicKey($("anthropicKey").value.trim());
+    st.className = r.ok ? "status" : "status error";
+    st.textContent = `Anthropic: ${r.reason}`;
+  };
+  $("btnTestDeepgram").onclick = async () => {
+    const st = $("keyStatus");
+    st.className = "status"; st.textContent = "Checking with Deepgram…";
+    const r = await checkDeepgramKey($("deepgramKey").value.trim());
+    st.className = r.ok ? "status" : "status error";
+    st.textContent = r.reason;
+  };
   $("btnExtract").onclick = async () => {
     const st = $("extractStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
