@@ -8,7 +8,7 @@ import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
-import { shouldSupersede, queueOrder } from "./lib/questionQueue.js";
+import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -16,7 +16,7 @@ const ui = {
   hint: $("hint"), qtype: $("qtype"), question: $("question"), stories: $("stories"),
   keywords: $("keywords"), watch: $("watch"), transcript: $("transcript"),
   talk: $("talk"), paceWarn: $("paceWarn"),
-  hintState: $("hintState"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
+  hintState: $("hintState"), cvLeads: $("cvLeads"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
   bankWarn: $("bankWarn"), gapNotice: $("gapNotice"),
   shapeBox: $("shapeBox"), answerShape: $("answerShape"), followUps: $("followUps"),
 };
@@ -147,7 +147,7 @@ function clearHintCard() {
   ui.qtype.textContent = "";
   ui.question.textContent = "Waiting for a question\u2026";
   ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
-  ui.gapNotice.hidden = true; ui.shapeBox.hidden = true;
+  ui.gapNotice.hidden = true; ui.shapeBox.hidden = true; ui.cvLeads.hidden = true;
 }
 
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
@@ -159,6 +159,7 @@ function addQuestion(h) {
     last.at = Date.now();
     selectedId = last.id;
   } else {
+    settleAnswering(questions, { lastCandidateAt }); // the one being answered is now done
     const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new" };
     questions.push(q);
     selectedId = q.id;
@@ -169,7 +170,7 @@ function addQuestion(h) {
   setTimeout(() => ui.hint.classList.remove("fresh"), 1500);
 }
 
-const STATUS_LABEL = { new: "", answering: "Answering", later: "Later", dismissed: "Dismissed" };
+const STATUS_LABEL = { new: "", answering: "Answering", answered: "Answered", later: "Later", dismissed: "Moved on" };
 
 function renderQueue() {
   ui.questions.innerHTML = "";
@@ -202,11 +203,25 @@ function renderQueue() {
       li.appendChild(tag);
     }
 
+    if (q.status === "answering") {
+      const done = document.createElement("button");
+      done.className = "qX";
+      done.textContent = "\u2713";
+      done.title = "Mark answered";
+      done.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "answered"); };
+      li.appendChild(done);
+    }
     const x = document.createElement("button");
     x.className = "qX";
-    x.textContent = q.status === "dismissed" ? "\u21ba" : "\u2715";
-    x.title = q.status === "dismissed" ? "Bring back" : "Move on from this question";
-    x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, q.status === "dismissed" ? "new" : "dismissed"); };
+    if (LIVE(q)) {
+      x.textContent = "\u2715";
+      x.title = "Move on: drop to the bottom of the list";
+      x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "dismissed"); };
+    } else {
+      x.textContent = "\u21ba Bring back";
+      x.title = "Bring this question back up";
+      x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "new"); selectedId = q.id; renderQueue(); renderHint(q.hint); };
+    }
     li.appendChild(x);
 
     li.onclick = () => { selectedId = q.id; renderQueue(); renderHint(q.hint); };
@@ -217,8 +232,8 @@ function renderQueue() {
 // Set a question's triage state. Dismissing the selected one hands focus to the newest live question.
 function setQuestionStatus(q, status) {
   q.status = status;
-  if (status === "dismissed" && q.id === selectedId) {
-    const next = [...questions].reverse().find((x) => x.status !== "dismissed");
+  if (!LIVE(q) && q.id === selectedId) {
+    const next = [...questions].reverse().find(LIVE);
     selectedId = next ? next.id : null;
     if (next) renderHint(next.hint);
     else clearHintCard();
@@ -239,6 +254,20 @@ function renderHint(h) {
     const b = document.createElement("b"); b.textContent = s.title;
     const span = document.createElement("span"); span.textContent = s.cue;
     el.append(b, span);
+    const beats = s.beats?.length ? s.beats : [];
+    if (beats.length) {
+      const ul = document.createElement("ul"); ul.className = "beats";
+      for (const t of beats) { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); }
+      el.appendChild(ul);
+    }
+    // The result line is the candidate's own text from the bank: free, exact, and the thing
+    // most often forgotten under pressure.
+    const bank = settings.stories?.find((x) => x.title.trim().toLowerCase() === s.title.toLowerCase());
+    if (bank?.result) {
+      const r = document.createElement("div"); r.className = "result";
+      r.textContent = `Result: ${bank.result.length > 140 ? `${bank.result.slice(0, 140)}\u2026` : bank.result}`;
+      el.appendChild(r);
+    }
     ui.stories.appendChild(el);
   }
   ui.keywords.innerHTML = "";
@@ -253,9 +282,12 @@ function renderHint(h) {
   const noStory = h.is_question && !h.stories.length;
   ui.gapNotice.hidden = !noStory;
   if (noStory) {
+    const leads = h.cv_leads?.length;
     ui.gapNotice.textContent = settings.stories?.length
-      ? "No story in your bank fits this one \u2014 answer from memory, and add a story for it afterwards."
-      : "Your story bank is empty, so there is nothing to point at. Hints stay generic until you add stories.";
+      ? (leads ? "No story in your bank fits this one \u2014 the CV pointers below are your own history; add a story for it afterwards."
+               : "No story in your bank fits this one \u2014 answer from memory, and add a story for it afterwards.")
+      : (leads ? "Your story bank is empty. The coach can only point at your CV below; add stories for real cues."
+               : "Your story bank is empty, so there is nothing to point at. Hints stay generic until you add stories.");
   }
 
   const shape = h.answer_shape || [];
@@ -275,7 +307,34 @@ function renderHint(h) {
   }
   ui.shapeBox.hidden = !(shape.length || ups.length);
 
+  ui.cvLeads.innerHTML = "";
+  const leads = h.cv_leads || [];
+  if (leads.length) {
+    const lab = document.createElement("span"); lab.className = "leadLabel";
+    lab.textContent = h.stories.length ? "Also in your CV:" : "From your CV (no story yet):";
+    ui.cvLeads.appendChild(lab);
+    for (const l of leads) {
+      const el = document.createElement("span"); el.className = "kw lead"; el.textContent = l;
+      ui.cvLeads.appendChild(el);
+    }
+  }
+  ui.cvLeads.hidden = !leads.length;
+
+  renderActions();
   ui.hintActions.hidden = false;
+}
+
+// The chips mirror the selected question's state, so "Answer this" reads "Answering ✓ done"
+// once clicked and a second tap marks it answered instead of silently clearing it.
+const ACT_LABEL = { answering: "Answer this", later: "Think about it", dismissed: "Move on" };
+function renderActions() {
+  const q = questions.find((x) => x.id === selectedId);
+  for (const b of ui.hintActions.querySelectorAll("[data-act]")) {
+    const act = b.dataset.act;
+    const on = q && q.status === act;
+    b.classList.toggle("on", !!on);
+    b.textContent = on && act === "answering" ? "Answering \u2014 tap when done" : ACT_LABEL[act];
+  }
 }
 
 // Without a story bank, hints can only ever be generic keywords, which is the single
@@ -455,6 +514,8 @@ async function stopAll() {
     if (!act) return;
     const q = questions.find((x) => x.id === selectedId);
     if (!q) return;
-    setQuestionStatus(q, q.status === act ? "new" : act); // tap again to clear
+    // Tapping "Answer this" again means "I answered it"; the other chips toggle off.
+    setQuestionStatus(q, q.status === act ? (act === "answering" ? "answered" : "new") : act);
+    renderActions();
   };
 })();

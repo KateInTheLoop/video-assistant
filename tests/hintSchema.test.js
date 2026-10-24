@@ -23,9 +23,21 @@ test("drops stories not in the bank", () => {
 });
 
 test("caps counts", () => {
-  const r = validateHint({ ...good, keywords: ["a", "b", "c", "d", "e", "f"], stories: [
-    { title: "Billing migration", cue: "1" }, { title: "Team lead at Acme", cue: "2" }, { title: "Billing migration", cue: "3" }] }, bank);
-  assert.equal(r.hint.keywords.length, 4); assert.equal(r.hint.stories.length, 2);
+  const r = validateHint({ ...good, keywords: ["a", "b", "c", "d", "e", "f", "g"], stories: [
+    { title: "Billing migration", cue: "1" }, { title: "Team lead at Acme", cue: "2" }, { title: "Billing migration", cue: "3" }, { title: "Billing migration", cue: "4" }] }, bank);
+  assert.equal(r.hint.keywords.length, 6); assert.equal(r.hint.stories.length, 3);
+});
+
+test("story beats and cv leads are labels: short, no first person, no sentences; capped", () => {
+  const r = validateHint({ ...good,
+    stories: [{ title: "Billing migration", cue: "same kind of system change", beats: ["Two ERPs, one ledger", "I led the cutover", "Close from 9 to 5 days", "Audit sign-off clean.", "fourth beat", "fifth"] }],
+    cv_leads: ["Oracle Fusion migration at Dropbox", "I ran AP in Warsaw", "US GAAP reporting", "SOX controls", "fifth lead"],
+  }, bank);
+  assert.deepEqual(r.hint.stories[0].beats, ["Two ERPs, one ledger", "Close from 9 to 5 days", "fourth beat"]);
+  assert.deepEqual(r.hint.cv_leads, ["Oracle Fusion migration at Dropbox", "US GAAP reporting", "SOX controls"]);
+  assert.ok(r.errors.some((e) => /rejected beat: I led/.test(e)));
+  assert.deepEqual(validateHint(good, bank).hint.cv_leads, []);
+  assert.deepEqual(validateHint(good, bank).hint.stories[0].beats, []);
 });
 
 test("rejects wrong shape", () => {

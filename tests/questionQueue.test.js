@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldSupersede, queueOrder, SUPERSEDE_MS } from "../lib/questionQueue.js";
+import { shouldSupersede, queueOrder, settleAnswering, SUPERSEDE_MS } from "../lib/questionQueue.js";
 
 const NOW = 1_000_000;
 const last = (over = {}) => ({ id: 1, at: NOW - 3000, status: "new", ...over });
@@ -40,4 +40,21 @@ test("dismissed questions sink below live ones, each group newest first", () => 
     { id: 4, status: "dismissed" },
   ];
   assert.deepEqual(queueOrder(qs).map((q) => q.id), [3, 1, 4, 2]);
+});
+
+test("answered questions sit between live and moved-on ones", () => {
+  const qs = [{ id: 1, status: "answered" }, { id: 2, status: "dismissed" }, { id: 3, status: "new" }, { id: 4, status: "answered" }];
+  assert.deepEqual(queueOrder(qs).map((q) => q.id), [3, 4, 1, 2]);
+});
+
+test("an 'answering' question settles to answered once the candidate has spoken since", () => {
+  const qs = [
+    { id: 1, at: 100, status: "answering" },
+    { id: 2, at: 500, status: "answering" },
+    { id: 3, at: 100, status: "later" },
+  ];
+  const done = settleAnswering(qs, { lastCandidateAt: 300 });
+  assert.deepEqual(done.map((q) => q.id), [1]);
+  assert.deepEqual(qs.map((q) => q.status), ["answered", "answering", "later"]);
+  assert.deepEqual(settleAnswering(qs, { lastCandidateAt: 0 }), []);
 });
