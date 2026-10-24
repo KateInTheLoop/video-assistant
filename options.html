@@ -17,6 +17,12 @@
   .story-card { background: var(--panel); border: 1px solid #262a35; border-radius: 8px; padding: 12px; margin: 10px 0; }
   .story-card .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .story-card textarea { min-height: 70px; }
+  .res-card { display: grid; grid-template-columns: 220px 1fr auto; gap: 10px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 8px 0; }
+  .res-card textarea { min-height: 90px; }
+  @media (max-width: 640px) { .res-card { grid-template-columns: 1fr; } }
+  details > summary { cursor: pointer; color: var(--muted); padding: 8px 0; }
+  #ctxTable td, #ctxTable th { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--line); }
+  #ctxTable td:nth-child(2), #ctxTable th:nth-child(2) { text-align: right; }
   .actions { display: flex; gap: 8px; margin: 14px 0; align-items: center; }
   .session { background: var(--panel); padding: 10px; margin: 8px 0; border-radius: 6px; font-size: 14px; }
   .session pre { white-space: pre-wrap; color: var(--muted); max-height: 200px; overflow: auto; }
@@ -54,12 +60,20 @@
 <div id="keyStatus" class="status"></div>
 <small>Deepgram is the default. AssemblyAI is an alternative/backup provider — pick whichever you have a working key for; only the selected one is used for live captions.</small>
 <div class="row">
-  <div><label>Claude model <span title="Opus gives the best judgement on which story fits; Haiku answers in well under a second; Sonnet sits between. All use the same cached prefix, so switching is free to try." style="cursor:help;color:var(--muted)">(?)</span></label>
+  <div><label>Live hint model <span title="Only live hints use this. Drafting stories, the gap report and the debrief always use Claude Opus 5.5: they are one-off judgement calls with nobody waiting." style="cursor:help;color:var(--muted)">(?)</span></label>
     <select id="model">
-      <option value="claude-opus-5-5">Claude Opus 5.5 — best judgement (default)</option>
+      <option value="claude-haiku-5-5">Claude Haiku 5.5 — fastest and cheapest (recommended)</option>
       <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — balanced</option>
-      <option value="claude-haiku-5-5">Claude Haiku 5.5 — fastest, cheapest</option>
+      <option value="claude-opus-5-5">Claude Opus 5.5 — strongest judgement, slower</option>
     </select></div>
+  <div><label>How much the coach sees <span title="Lean is the smallest and fastest. Standard adds your CV. Everything also sends the extra materials below. All of it is cached after the first hint, so the difference is mostly how much the coach can draw on." style="cursor:help;color:var(--muted)">(?)</span></label>
+    <select id="contextTier">
+      <option value="lean">Lean — stories and job only</option>
+      <option value="standard">Standard — plus CV</option>
+      <option value="full">Everything — plus extra materials</option>
+    </select></div>
+</div>
+<div class="row">
   <div><label>Your first name (shown in transcript)</label><input id="candidateName"></div>
 </div>
 <small>Keys are stored in this extension's local storage only. Transcripts never leave this machine; only the recent transcript text is sent to Claude for hints and audio goes to Deepgram for transcription.</small>
@@ -86,6 +100,19 @@
   <button id="btnExtract" class="primary">Draft stories from CV with Claude</button>
   <span id="extractStatus" class="status"></span>
 </div>
+
+<h2>More for the coach (optional)</h2>
+<small>Anything else the coach should know: a cover or motivation letter, your LinkedIn profile, company research, or plain notes (why this role, why you are moving, constraints, the interviewer's name). It is used for motivation and logistics questions and to tailor cues to this company; it never replaces your stories. Upload a file or paste text; everything here is sent to Claude with each hint, cached, and nowhere else.</small>
+<details id="resBox">
+  <summary id="resSummary">Add materials</summary>
+  <div id="resources"></div>
+  <div class="actions">
+    <button id="btnAddRes">Add material</button>
+    <button id="btnResUpload">Upload a file</button>
+    <input id="resFile" type="file" accept=".pdf,.docx,.odt,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/plain,text/markdown" style="display:none">
+    <span id="resStatus" class="status"></span>
+  </div>
+</details>
 
 <h2>Guided story interview</h2>
 <small>Ten standard behavioral questions. Answer each the way you would say it out loud; Claude tidies it into a story card without adding anything. Skip any you have no story for.</small>
@@ -122,6 +149,14 @@
   <button id="btnImport">Import story bank</button>
   <input id="importFile" type="file" accept="application/json" style="display:none">
   <span id="bankStatus" class="status"></span>
+</div>
+
+<h2>What the coach sees</h2>
+<small>The context sent with every live hint, by component. Sizes are estimates (about four characters per token); click Count exactly for the API's number. The whole block is cached for an hour after the first hint, so after that each hint pays only a cache read. If the total is under the cache minimum, nothing caches and every hint pays full price: add stories or a CV.</small>
+<table id="ctxTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
+<div class="actions">
+  <button id="btnCountCtx">Count exactly</button>
+  <span id="ctxStatus" class="status"></span>
 </div>
 
 <h2>Diagnostics</h2>

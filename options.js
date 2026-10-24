@@ -1,6 +1,9 @@
 import { loadSettings, saveSettings } from "./storage.js";
 import { extractStories, storyFromAnswer, gapReport, cvTextFromPdf } from "./claude.js";
 import { cvTextFromFile } from "./lib/cvFile.js";
+import { RESOURCE_KINDS } from "./lib/context.js";
+import { buildHintRequest, contextReport } from "./lib/hintRequest.js";
+import { countHintTokens } from "./claude.js";
 import { exportBank, importBank, mergeStories, normalizeLikely } from "./lib/bank.js";
 import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
@@ -17,10 +20,11 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "candidateName", "cvText", "jobDescription"];
+const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "contextTier", "candidateName", "cvText", "jobDescription"];
 const KEY_FIELDS = ["anthropicKey", "deepgramKey", "assemblyaiKey"];
 let stories = [];
 let likely = [];
+let resources = [];   // [{kind, text}] extra materials for the coach
 
 function renderStories() {
   const box = $("stories");
@@ -46,6 +50,40 @@ function renderStories() {
     card.querySelector("[data-del]").onclick = () => { stories.splice(i, 1); renderStories(); };
     box.appendChild(card);
   });
+}
+
+function renderResources() {
+  const box = $("resources");
+  box.innerHTML = "";
+  resources.forEach((r, i) => {
+    const card = document.createElement("div");
+    card.className = "res-card";
+    const sel = document.createElement("select");
+    for (const k of RESOURCE_KINDS) { const o = document.createElement("option"); o.value = k.id; o.textContent = k.label; sel.appendChild(o); }
+    sel.value = RESOURCE_KINDS.some((k) => k.id === r.kind) ? r.kind : "other";
+    sel.onchange = () => { resources[i].kind = sel.value; };
+    const ta = document.createElement("textarea");
+    ta.placeholder = "Paste the text here";
+    ta.value = r.text || "";
+    ta.oninput = () => { resources[i].text = ta.value; };
+    const del = document.createElement("button");
+    del.textContent = "Remove";
+    del.onclick = () => { resources.splice(i, 1); renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    card.append(sel, ta, del);
+    box.appendChild(card);
+  });
+  const n = resources.filter((r) => r.text?.trim()).length;
+  $("resSummary").textContent = n ? `${n} material${n === 1 ? "" : "s"} added` : "Add materials";
+  if (resources.length) $("resBox").open = true;
+}
+
+function renderContext() {
+  const rep = contextReport({ stories, cvText: $("cvText").value, jobDescription: $("jobDescription").value, resources, tier: $("contextTier").value });
+  const rows = rep.parts.map((p) => p.included
+    ? `<tr><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>~${p.tokens.toLocaleString()}</td></tr>`
+    : `<tr style="color:var(--muted)"><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>not sent at this tier</td></tr>`).join("");
+  const warn = rep.cacheable ? "" : `<tr><td colspan="2" style="color:var(--warn)">Under the ${rep.cacheMin}-token cache minimum: nothing will cache. Add stories, a CV or materials.</td></tr>`;
+  $("ctxTable").innerHTML = `<tr><th>Component</th><th>Tokens (est.)</th></tr>${rows}<tr><th>Total cached prefix</th><th>~${rep.total.toLocaleString()}</th></tr>${warn}`;
 }
 
 function renderLikely() {
@@ -134,7 +172,7 @@ async function save() {
   const form = {};
   for (const f of fields) form[f] = $(f).value;
   const { values, errors } = validateSettings(form);
-  await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely });
+  await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely, resources: resources.filter((r) => r.text?.trim()) });
   return errors;
 }
 
@@ -162,16 +200,20 @@ document.addEventListener("input", () => {
     st.className = problems.length ? "status error" : "status";
     st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
     showKeyStatus();
+    renderContext();
   }, 600);
 });
 
 async function load() {
   const s = await loadSettings();
   for (const f of fields) $(f).value = s[f] || "";
-  if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-opus-5-5";
+  if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-haiku-5-5";
+  if (![...$("contextTier").options].some((o) => o.value === $("contextTier").value)) $("contextTier").value = "full";
   stories = s.stories || [];
+  resources = s.resources || [];
   likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
   renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus();
+  renderResources(); renderContext();
 }
 
 (async () => {
@@ -282,6 +324,38 @@ async function load() {
       st.textContent = `Loaded ${file.name}: ${text.length.toLocaleString()} characters. Check it reads right, then draft stories.`;
     } catch (e) { st.textContent = e.message; }
     finally { $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
+  };
+
+  $("btnAddRes").onclick = () => { resources.push({ kind: "notes", text: "" }); renderResources(); $("resBox").open = true; };
+  $("btnResUpload").onclick = () => $("resFile").click();
+  $("resFile").onchange = async () => {
+    const file = $("resFile").files[0]; if (!file) return;
+    const st = $("resStatus");
+    const isPdf = /\.pdf$/i.test(file.name);
+    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first."; return; }
+    st.textContent = isPdf ? "Reading the PDF with Claude…" : "Reading…";
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const text = await cvTextFromFile({ name: file.name, bytes,
+        pdfToText: isPdf ? (b) => cvTextFromPdf({ apiKey: $("anthropicKey").value.trim(), base64: bytesToBase64(b) }) : null });
+      if (!text.trim()) throw new Error("No text found in that file.");
+      const guess = /cover|motivation|letter/i.test(file.name) ? "cover_letter" : /linkedin/i.test(file.name) ? "linkedin" : "other";
+      resources.push({ kind: guess, text });
+      renderResources();
+      $("resources").dispatchEvent(new Event("input", { bubbles: true }));
+      st.textContent = `Added ${file.name}. Pick what it is in the dropdown.`;
+    } catch (e) { st.textContent = e.message; }
+    finally { $("resFile").value = ""; }
+  };
+  $("btnCountCtx").onclick = async () => {
+    const st = $("ctxStatus");
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    st.textContent = "Counting…";
+    try {
+      const body = buildHintRequest({ model: $("model").value, transcript: [], stories, jobDescription: $("jobDescription").value, cvText: $("cvText").value, resources, tier: $("contextTier").value });
+      const n = await countHintTokens({ apiKey: $("anthropicKey").value.trim(), body });
+      st.textContent = `Exact: ${n.toLocaleString()} input tokens for a hint request (prefix plus an empty transcript).`;
+    } catch (e) { st.textContent = e.message; }
   };
 
   $("btnExtract").onclick = async () => {

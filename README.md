@@ -16,6 +16,9 @@ The optional "answer shape" panel names what a strong answer covers and the foll
 3. Click **Capture my mic**.
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
 
+## What the coach knows
+Every live hint carries, in a cached prefix: your story bank, the job description, your CV, and any extra materials you add (cover letter, LinkedIn profile, company research, notes). A "How much the coach sees" dropdown in Settings picks Lean (stories + job), Standard (+ CV) or Everything (+ materials); Settings → "What the coach sees" shows the size of each part and whether it is above the cache minimum. The coach is also told what has been asked so far and which stories were used, so it steers you away from repeating one. Live hints default to Claude Haiku 5.5 (fastest, cheapest); drafting stories, the gap report and the debrief always use Claude Opus 5.5.
+
 ## CV formats
 | Format | How it is read | Leaves the machine? |
 |---|---|---|

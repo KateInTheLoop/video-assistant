@@ -8,7 +8,7 @@ test("stable context sits before the cache breakpoint; transcript only in messag
   const a = buildHintRequest({ ...ctx, transcript: [{ speaker: "interviewer", text: "Tell me about A?", t: 1 }] });
   const b = buildHintRequest({ ...ctx, transcript: [{ speaker: "interviewer", text: "Different question?", t: 2 }] });
   assert.deepEqual(a.system, b.system, "system prefix must not change between hint calls");
-  assert.deepEqual(a.system.at(-1).cache_control, { type: "ephemeral" });
+  assert.deepEqual(a.system.at(-1).cache_control, { type: "ephemeral", ttl: "1h" });
   assert.notEqual(a.messages[0].content, b.messages[0].content);
   assert.match(a.messages[0].content, /Tell me about A\?/);
   assert.doesNotMatch(JSON.stringify(a.system), /Tell me about A/);
