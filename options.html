@@ -54,7 +54,7 @@
 <div id="keyStatus" class="status"></div>
 <small>Deepgram is the default. AssemblyAI is an alternative/backup provider — pick whichever you have a working key for; only the selected one is used for live captions.</small>
 <div class="row">
-  <div><label>Claude model</label>
+  <div><label>Claude model <span title="Opus gives the best judgement on which story fits; Haiku answers in well under a second; Sonnet sits between. All use the same cached prefix, so switching is free to try." style="cursor:help;color:var(--muted)">(?)</span></label>
     <select id="model">
       <option value="claude-opus-5-5">Claude Opus 5.5 — best judgement (default)</option>
       <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — balanced</option>
@@ -72,10 +72,11 @@
 <small>Chrome remembers the permission for this extension once granted here. If it was blocked, click the lock icon in the address bar and allow the microphone.</small>
 
 <h2>CV and job</h2>
+<small>The CV and job description are the ground truth for everything else: stories are drafted from the CV, likely questions from the job, and both are sent to Claude with every hint so it can point at your real experience. Upload a file or paste text; either way you get editable plain text here, which is the most token-efficient form for Claude. DOCX, ODT and text files are read locally and never leave the machine; a PDF is transcribed once by Claude (a few seconds). Old .doc files and Google Docs: download as .docx first.</small>
 <label>CV</label>
 <div class="actions" style="margin-top:0">
-  <button id="btnCvUpload">Upload CV (PDF, DOCX, TXT, MD)</button>
-  <input id="cvFile" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" style="display:none">
+  <button id="btnCvUpload">Upload CV (PDF, DOCX, ODT, TXT, MD)</button>
+  <input id="cvFile" type="file" accept=".pdf,.docx,.odt,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/plain,text/markdown" style="display:none">
   <span id="cvStatus" class="status"></span>
 </div>
 <textarea id="cvText" placeholder="Upload a file above, or paste your CV here as plain text"></textarea>
@@ -107,6 +108,7 @@
 </div>
 
 <h2>Likely questions and gaps</h2>
+<small>Claude reads the job description against your story bank and lists the questions it makes likely. A ⚠ line is a gap: a probable question with no story behind it. Those are the ones to prepare; during the call a question with no matching story is flagged the same way.</small>
 <div class="actions">
   <button id="btnGaps" class="primary">Find gaps for this job</button>
   <span id="gapStatus" class="status"></span>
@@ -114,6 +116,7 @@
 <ul id="likely"></ul>
 
 <h2>Backup</h2>
+<small>Your story bank lives only in this browser's extension storage. Export it to a JSON file before reinstalling or switching machines; import merges by title and skips duplicates.</small>
 <div class="actions">
   <button id="btnExport">Export story bank (JSON)</button>
   <button id="btnImport">Import story bank</button>
@@ -122,11 +125,13 @@
 </div>
 
 <h2>Diagnostics</h2>
+<small>One row per live hint: latency, model, tokens in and out, and how many input tokens came from the prompt cache. After the first hint of a session the cache share should be high, which is what keeps hints fast and cheap. Use this to compare models and to see whether hints are arriving in time.</small>
 <div id="diagSummary" class="status"></div>
 <table id="diagTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
 <div class="actions"><button id="btnClearDiag">Clear diagnostics</button></div>
 
 <h2>Past sessions</h2>
+<small>Each stopped session keeps its transcript, pacing per answer, and a debrief: which story you used, which STAR parts were present, one thing that went well and one to improve. Nothing here is uploaded anywhere; the debrief was produced from the transcript at the time you stopped.</small>
 <div id="sessions"></div>
 
 <script type="module" src="options.js"></script>
