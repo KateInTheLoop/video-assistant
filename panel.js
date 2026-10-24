@@ -8,6 +8,7 @@ import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
+import { shouldSupersede, queueOrder } from "./lib/questionQueue.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -16,6 +17,7 @@ const ui = {
   keywords: $("keywords"), watch: $("watch"), transcript: $("transcript"),
   talk: $("talk"), paceWarn: $("paceWarn"),
   hintState: $("hintState"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
+  bankWarn: $("bankWarn"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -32,6 +34,7 @@ const scheduler = new HintScheduler();  // coalesces interviewer speech, gates h
 let hintTimer = null;
 let lastHint = null;                 // last validated hint, so follow-ups keep the same story
 let talkStart = null, talkTimer = null;
+let lastCandidateAt = 0;             // last time the candidate's mic produced speech
 let sessionStart = null;
 
 function setStatus(msg, isError = false) {
@@ -67,7 +70,7 @@ function lineEl(speaker, text, isInterim) {
 
 function onInterim({ speaker, text }) {
   interim[speaker] = text;
-  if (speaker === "candidate") { scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
+  if (speaker === "candidate") { lastCandidateAt = Date.now(); scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
   renderTranscript();
 }
 
@@ -134,11 +137,19 @@ async function recordDiag(info) {
   await chrome.storage.local.set({ diag: pushEntry(diag, entry) });
 }
 
-// A new validated hint that is a real question: add it to the queue, select it, flash the card.
+// A new validated hint that is a real question. See lib/questionQueue.js for why a hint
+// arriving while the interviewer is still talking updates the last entry in place.
 function addQuestion(h) {
-  const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new" };
-  questions.push(q);
-  selectedId = q.id;
+  const last = questions[questions.length - 1];
+  if (shouldSupersede({ last, hint: h, now: Date.now(), lastCandidateAt })) {
+    last.hint = h;
+    last.at = Date.now();
+    selectedId = last.id;
+  } else {
+    const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new" };
+    questions.push(q);
+    selectedId = q.id;
+  }
   renderQueue();
   renderHint(h);
   ui.hint.classList.add("fresh");
@@ -156,16 +167,53 @@ function renderQueue() {
     ui.questions.appendChild(li);
     return;
   }
-  for (const q of [...questions].reverse()) {
+  for (const q of queueOrder(questions)) {
     const li = document.createElement("li");
     li.className = `qItem status-${q.status}${q.id === selectedId ? " selected" : ""}`;
-    const when = new Date(q.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const tag = STATUS_LABEL[q.status] ? `<span class="qStatus">${STATUS_LABEL[q.status]}</span>` : "";
-    li.innerHTML = `<span class="qWhen">${when}</span><span class="qText"></span>${tag}`;
-    li.querySelector(".qText").textContent = q.hint.question_summary || "(question)";
+
+    const when = document.createElement("span");
+    when.className = "qWhen";
+    when.textContent = new Date(q.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const text = document.createElement("span");
+    text.className = "qText";
+    text.textContent = q.hint.question_summary || "(question)";
+
+    li.append(when, text);
+    if (STATUS_LABEL[q.status]) {
+      const tag = document.createElement("span");
+      tag.className = "qStatus";
+      tag.textContent = STATUS_LABEL[q.status];
+      li.appendChild(tag);
+    }
+
+    const x = document.createElement("button");
+    x.className = "qX";
+    x.textContent = q.status === "dismissed" ? "\u21ba" : "\u2715";
+    x.title = q.status === "dismissed" ? "Bring back" : "Move on from this question";
+    x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, q.status === "dismissed" ? "new" : "dismissed"); };
+    li.appendChild(x);
+
     li.onclick = () => { selectedId = q.id; renderQueue(); renderHint(q.hint); };
     ui.questions.appendChild(li);
   }
+}
+
+// Set a question's triage state. Dismissing the selected one hands focus to the newest live question.
+function setQuestionStatus(q, status) {
+  q.status = status;
+  if (status === "dismissed" && q.id === selectedId) {
+    const next = [...questions].reverse().find((x) => x.status !== "dismissed");
+    selectedId = next ? next.id : null;
+    if (next) renderHint(next.hint);
+    else {
+      ui.hint.classList.add("empty");
+      ui.hintActions.hidden = true;
+      ui.qtype.textContent = ""; ui.question.textContent = "Waiting for a question\u2026";
+      ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
+    }
+  }
+  renderQueue();
 }
 
 function renderHint(h) {
@@ -190,6 +238,14 @@ function renderHint(h) {
   }
   ui.watch.textContent = h.watch_out;
   ui.hintActions.hidden = false;
+}
+
+// Without a story bank, hints can only ever be generic keywords, which is the single
+// biggest cause of "the AI said nothing useful". Say so permanently, not in a status line
+// that the next message overwrites.
+function renderBankWarning() {
+  const empty = !settings.stories?.length;
+  ui.bankWarn.hidden = !empty;
 }
 
 // Show that a hint request is in flight, or surface why it failed, right on the card.
@@ -338,8 +394,8 @@ async function stopAll() {
 (async () => {
   settings = await loadSettings();
   if (!settings.anthropicKey || !sttKey()) setStatus("Add your API keys in Settings before starting.", true);
-  else if (!settings.stories.length) setStatus("No stories yet. Paste your CV in Settings so hints can point at your own experience.", true);
-  chrome.storage.onChanged.addListener(async () => { settings = await loadSettings(); });
+  renderBankWarning();
+  chrome.storage.onChanged.addListener(async () => { settings = await loadSettings(); renderBankWarning(); });
   ui.tab.onclick = captureTab;
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;
@@ -349,7 +405,6 @@ async function stopAll() {
     if (!act) return;
     const q = questions.find((x) => x.id === selectedId);
     if (!q) return;
-    q.status = q.status === act ? "new" : act; // tap again to clear
-    renderQueue();
+    setQuestionStatus(q, q.status === act ? "new" : act); // tap again to clear
   };
 })();
