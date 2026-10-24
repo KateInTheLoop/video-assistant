@@ -114,7 +114,8 @@ function renderInterview() {
 // Reads the keys back from storage, so the page shows what was actually saved.
 async function showKeyStatus() {
   const s = await loadSettings();
-  $("keyStatus").textContent = KEY_FIELDS.map((f) => {
+  const shown = ["anthropicKey", s.sttProvider === "assemblyai" ? "assemblyaiKey" : "deepgramKey"];
+  $("keyStatus").textContent = shown.map((f) => {
     const label = f === "anthropicKey" ? "Anthropic" : f === "deepgramKey" ? "Deepgram" : "AssemblyAI";
     return s[f] ? `${label} key saved (ends …${s[f].slice(-4)})` : `${label} key NOT saved`;
   }).join("  ·  ");
@@ -231,21 +232,21 @@ async function load() {
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
   $("btnSave").onclick = saveAndRefresh;
   $("btnTestAnthropic").onclick = async () => {
-    const st = $("keyStatus");
+    const st = $("keyTest");
     st.className = "status"; st.textContent = "Checking with Anthropic\u2026";
     const r = await checkAnthropicKey($("anthropicKey").value.trim());
     st.className = r.ok ? "status" : "status error";
     st.textContent = `Anthropic: ${r.reason}`;
   };
   $("btnTestAssemblyai").onclick = async () => {
-    const st = $("keyStatus");
+    const st = $("keyTest");
     st.className = "status"; st.textContent = "Checking with AssemblyAI\u2026";
     const r = await checkAssemblyAiKey($("assemblyaiKey").value.trim());
     st.className = r.ok ? "status" : "status error";
     st.textContent = `AssemblyAI: ${r.reason}`;
   };
   $("btnTestDeepgram").onclick = async () => {
-    const st = $("keyStatus");
+    const st = $("keyTest");
     st.className = "status"; st.textContent = "Checking with Deepgram…";
     const r = await checkDeepgramKey($("deepgramKey").value.trim());
     st.className = r.ok ? "status" : "status error";

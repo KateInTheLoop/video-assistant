@@ -35,6 +35,7 @@ export class AssemblyAiStream {
     this.retries = 0;
     this.stopped = false;
     this.finalizedTurn = -1;   // dedupe: formatted + unformatted finals share a turn_order
+    this.finalFallbacks = new Map(); // turn_order -> timer emitting the unformatted text if no formatted one comes
     this.onStatus = () => {};
   }
 
@@ -62,6 +63,14 @@ export class AssemblyAiStream {
     return token;
   }
 
+  emitFinal(turnOrder, text) {
+    clearTimeout(this.finalFallbacks.get(turnOrder)); this.finalFallbacks.delete(turnOrder);
+    if (turnOrder <= this.finalizedTurn) return;
+    this.finalizedTurn = turnOrder;
+    this.onFinal({ speaker: this.speaker, text, speechFinal: true });
+    this.onUtteranceEnd?.({ speaker: this.speaker });
+  }
+
   async connect() {
     const token = await this.fetchToken();
     const params = new URLSearchParams({
@@ -80,20 +89,25 @@ export class AssemblyAiStream {
     this.ws.onmessage = (ev) => {
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "Turn") {
+        this.retries = 0; // a stable connection: data is flowing
         const text = (msg.transcript || "").trim();
         if (!text) return;
         if (!msg.end_of_turn) { this.onInterim({ speaker: this.speaker, text }); return; }
-        // end_of_turn: one formatted + one unformatted per turn; emit the first, skip the rest.
-        if (msg.turn_order === this.finalizedTurn) return;
-        this.finalizedTurn = msg.turn_order;
-        this.onFinal({ speaker: this.speaker, text, speechFinal: true });
-        this.onUtteranceEnd?.({ speaker: this.speaker });
+        // end_of_turn arrives twice per turn with format_turns: unformatted first, then formatted
+        // (punctuation and casing, which question.js needs). Prefer the formatted one; if it does
+        // not come within a short window, emit the unformatted text so nothing is lost.
+        if (msg.turn_order <= this.finalizedTurn) return;
+        if (msg.turn_is_formatted) {
+          this.emitFinal(msg.turn_order, text);
+        } else if (!this.finalFallbacks.has(msg.turn_order)) {
+          this.onInterim({ speaker: this.speaker, text });
+          this.finalFallbacks.set(msg.turn_order, setTimeout(() => this.emitFinal(msg.turn_order, text), 1500));
+        }
       } else if (msg.type === "Error" || msg.error) {
         this.onError?.(new Error(msg.error || "AssemblyAI error"));
       }
     };
     this.ws.onclose = (e) => { if (e.code !== 1000 && !this.stopped) this.reconnect(e); };
-    this.retries = 0;
   }
 
   // Reconnect with backoff while the media stream is live (mirrors stt.js).
@@ -126,9 +140,13 @@ export class AssemblyAiStream {
 
   stop() {
     this.stopped = true;
+    for (const t of this.finalFallbacks.values()) clearTimeout(t);
+    this.finalFallbacks.clear();
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "Terminate" }));
       this.ws.close(1000);
+    } else if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.ws.close(); // abort the handshake so a late open cannot leak a billed session
     }
     this.ctx?.close();
     this.ws = null; this.ctx = null;
