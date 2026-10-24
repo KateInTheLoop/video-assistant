@@ -15,6 +15,10 @@ function headers(apiKey, betas = []) {
   return h;
 }
 
+// One-off prep and the debrief are judgement calls with nobody waiting on them, so they use the
+// strongest model regardless of the live-hint choice in Settings.
+export const PREP_MODEL = "claude-opus-5-5";
+
 export const HINT_TIMEOUT_MS = 8000;   // a hint that arrives after the candidate started answering is useless
 export const PREP_TIMEOUT_MS = 180000; // CV extraction and debriefs may legitimately take a while
 
@@ -55,6 +59,14 @@ export async function checkAnthropicKey(apiKey) {
   if (res.ok || res.status === 400) return { ok: true, reason: "Key OK." };
   const body = await res.text().catch(() => "");
   return { ok: false, reason: `Anthropic returned HTTP ${res.status}. ${body.slice(0, 160)}` };
+}
+
+// Exact token count of the hint prefix, for the "what the coach sees" panel.
+export async function countHintTokens({ apiKey, body }) {
+  const { max_tokens, output_config, fallbacks, ...countable } = body;
+  const res = await fetch("https://api.anthropic.com/v1/messages/count_tokens", { method: "POST", headers: headers(apiKey), body: JSON.stringify(countable) });
+  if (!res.ok) throw new Error(`count_tokens ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return (await res.json()).input_tokens;
 }
 
 // --- Live hint -------------------------------------------------------------
@@ -112,7 +124,7 @@ export async function cvTextFromPdf({ apiKey, base64 }) {
 
 export async function extractStories({ apiKey, model, cvText, jobDescription }) {
   const { data } = await call(apiKey, {
-    model,
+    model: PREP_MODEL,
     max_tokens: 16000,
     output_config: { format: { type: "json_schema", schema: STORIES_SCHEMA } },
     fallbacks: "default",
@@ -128,7 +140,7 @@ Then, given the job description, list the questions most likely to come up. Resp
 
 export async function storyFromAnswer({ apiKey, model, question, tag, answer }) {
   const { data } = await call(apiKey, {
-    model,
+    model: PREP_MODEL,
     max_tokens: 4000,
     output_config: { format: { type: "json_schema", schema: STORY_FROM_ANSWER_SCHEMA } },
     fallbacks: "default",
@@ -164,7 +176,7 @@ const GAP_SCHEMA = {
 export async function gapReport({ apiKey, model, jobDescription, stories }) {
   const bank = stories.map((s) => `- ${s.title} (${s.tags || "no tags"}): ${s.situation.slice(0, 160)}`).join("\n") || "(empty)";
   const { data } = await call(apiKey, {
-    model,
+    model: PREP_MODEL,
     max_tokens: 4000,
     output_config: { format: { type: "json_schema", schema: GAP_SCHEMA } },
     fallbacks: "default",
@@ -206,7 +218,7 @@ export async function debrief({ apiKey, model, lines, stories }) {
   const transcript = lines.map((l) => `${l.speaker === "interviewer" ? "INTERVIEWER" : "CANDIDATE"}: ${l.text}`).join("\n");
   const bank = stories.map((s) => `- ${s.title}`).join("\n") || "(empty)";
   const { data } = await call(apiKey, {
-    model,
+    model: PREP_MODEL,
     max_tokens: 16000,
     output_config: { format: { type: "json_schema", schema: DEBRIEF_SCHEMA } },
     fallbacks: "default",

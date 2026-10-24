@@ -20,6 +20,7 @@ If the card shows **Errors**, click it and paste the text into `STATE.md` → "H
 5. Click **Upload CV** and pick your PDF, DOCX, ODT, TXT or MD file (or paste the text). A PDF takes a few seconds while Claude transcribes it; other formats are instant and never leave the machine. From Google Docs or an old .doc: File → Download → Microsoft Word (.docx) first. Check the text reads right, then paste the **job description** and click **Draft stories from CV**.
 6. Edit each story until it sounds like you. Delete anything that is not true.
 7. Answer the **Guided story interview** questions you have real stories for. Skip the rest.
+7b. Optional: under **More for the coach**, add a cover letter, your LinkedIn profile, company research or notes (why this role, constraints, the interviewer's name). Leave **How much the coach sees** on Everything unless you want a leaner prompt.
 8. Click **Find gaps for this job**. Add stories for any ⚠ lines you can.
 9. Click **Save**. Click **Export story bank** and keep the file.
 

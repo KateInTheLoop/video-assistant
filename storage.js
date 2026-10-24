@@ -3,10 +3,12 @@ export const DEFAULTS = {
   deepgramKey: "",
   assemblyaiKey: "",
   sttProvider: "deepgram",   // "deepgram" | "assemblyai"
-  model: "claude-opus-5-5",
+  model: "claude-haiku-5-5",   // live hints: speed and cost; prep/debrief use PREP_MODEL in claude.js
   cvText: "",
   jobDescription: "",
   stories: [],          // [{title, situation, action, result, tags}]
+  resources: [],
+  contextTier: "full",  // lean | standard | full: how much of the above goes to the coach        // [{kind, text}] extra materials for the coach: cover letter, LinkedIn, research, notes
   candidateName: "",
 };
 

@@ -112,7 +112,8 @@ async function requestHint() {
   try {
     res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
-      stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText, lastHint,
+      stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
+      resources: settings.resources, questions, lastHint, tier: settings.contextTier,
     });
     const { ok, errors, hint } = validateHint(res.hint, settings.stories.map((s) => s.title));
     if (errors.length) console.warn("hint validator:", errors);

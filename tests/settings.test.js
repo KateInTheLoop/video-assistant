@@ -58,3 +58,9 @@ test("sttProvider is validated and defaults to deepgram", () => {
   assert.equal(validateSettings({ ...good, sttProvider: "assemblyai" }).values.sttProvider, "assemblyai");
   assert.equal(validateSettings({ ...good, sttProvider: "bogus" }).values.sttProvider, "deepgram");
 });
+
+test("contextTier is validated and defaults to full", () => {
+  assert.equal(validateSettings({ ...good, contextTier: "lean" }).values.contextTier, "lean");
+  assert.equal(validateSettings({ ...good }).values.contextTier, "full");
+  assert.equal(validateSettings({ ...good, contextTier: "huge" }).values.contextTier, "full");
+});
