@@ -14,7 +14,13 @@ const ui = {
   hint: $("hint"), qtype: $("qtype"), question: $("question"), stories: $("stories"),
   keywords: $("keywords"), watch: $("watch"), transcript: $("transcript"),
   talk: $("talk"), paceWarn: $("paceWarn"),
+  hintState: $("hintState"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
 };
+
+// Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
+let questions = [];
+let selectedId = null;
+let qSeq = 0;
 
 let settings;
 let streams = { interviewer: null, candidate: null };
@@ -42,6 +48,7 @@ function renderTranscript() {
     if (interim[sp]) ui.transcript.appendChild(lineEl(sp, interim[sp], true));
   }
   ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  ui.save.disabled = transcript.length === 0;
 }
 
 function lineEl(speaker, text, isInterim) {
@@ -96,6 +103,7 @@ async function requestHint() {
   }
   const t0 = performance.now();
   let res = null;
+  setHintState("Analysing\u2026");
   try {
     res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
@@ -104,11 +112,13 @@ async function requestHint() {
     const { ok, errors, hint } = validateHint(res.hint, settings.stories.map((s) => s.title));
     if (errors.length) console.warn("hint validator:", errors);
     if (!ok) throw new Error("Hint rejected by validator; see console.");
-    if (hint.is_question) { renderHint(hint); lastHint = hint; }
+    if (hint.is_question) { addQuestion(hint); lastHint = hint; }
+    else setHintState("");
     const cached = res.usage.cache_read_input_tokens ? ", cached" : "";
     setStatus(`Hint in ${Math.round(res.ms)} ms${cached}`);
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
+    setHintState(e.message, true);
     setStatus(e.message, true);
     recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
   } finally {
@@ -123,9 +133,45 @@ async function recordDiag(info) {
   await chrome.storage.local.set({ diag: pushEntry(diag, entry) });
 }
 
+// A new validated hint that is a real question: add it to the queue, select it, flash the card.
+function addQuestion(h) {
+  const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new" };
+  questions.push(q);
+  selectedId = q.id;
+  renderQueue();
+  renderHint(h);
+  ui.hint.classList.add("fresh");
+  setTimeout(() => ui.hint.classList.remove("fresh"), 1500);
+}
+
+const STATUS_LABEL = { new: "", answering: "Answering", later: "Later", dismissed: "Dismissed" };
+
+function renderQueue() {
+  ui.questions.innerHTML = "";
+  if (!questions.length) {
+    const li = document.createElement("li");
+    li.className = "qEmpty";
+    li.textContent = "Detected questions will appear here. Click one to bring its hint back.";
+    ui.questions.appendChild(li);
+    return;
+  }
+  for (const q of [...questions].reverse()) {
+    const li = document.createElement("li");
+    li.className = `qItem status-${q.status}${q.id === selectedId ? " selected" : ""}`;
+    const when = new Date(q.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const tag = STATUS_LABEL[q.status] ? `<span class="qStatus">${STATUS_LABEL[q.status]}</span>` : "";
+    li.innerHTML = `<span class="qWhen">${when}</span><span class="qText"></span>${tag}`;
+    li.querySelector(".qText").textContent = q.hint.question_summary || "(question)";
+    li.onclick = () => { selectedId = q.id; renderQueue(); renderHint(q.hint); };
+    ui.questions.appendChild(li);
+  }
+}
+
 function renderHint(h) {
   ui.hint.classList.remove("empty");
-  ui.qtype.textContent = h.follow_up ? `${h.question_type} · follow-up, same story` : h.question_type;
+  ui.hintState.textContent = "";
+  ui.hintState.className = "hintState";
+  ui.qtype.textContent = h.follow_up ? `${h.question_type} \u00b7 follow-up, same story` : h.question_type;
   ui.question.textContent = h.question_summary;
   ui.stories.innerHTML = "";
   for (const s of h.stories) {
@@ -142,8 +188,26 @@ function renderHint(h) {
     ui.keywords.appendChild(el);
   }
   ui.watch.textContent = h.watch_out;
-  ui.hint.classList.add("fresh");
-  setTimeout(() => ui.hint.classList.remove("fresh"), 1500);
+  ui.hintActions.hidden = false;
+}
+
+// Show that a hint request is in flight, or surface why it failed, right on the card.
+function setHintState(text, isError = false) {
+  ui.hintState.textContent = text;
+  ui.hintState.className = `hintState${isError ? " error" : ""}`;
+}
+
+// Full conversation to a text file the candidate keeps.
+function saveTranscript() {
+  if (!transcript.length) return;
+  const header = `Interview transcript\n${new Date(sessionStart || Date.now()).toLocaleString()}\n\n`;
+  const body = transcript.map((l) => `${l.speaker === "interviewer" ? "Interviewer" : (settings.candidateName || "You")}: ${l.text}`).join("\n");
+  const blob = new Blob([header + body + "\n"], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `interview-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // --- Talk clock ------------------------------------------------------------
@@ -268,4 +332,13 @@ async function stopAll() {
   ui.tab.onclick = captureTab;
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;
+  ui.save.onclick = saveTranscript;
+  ui.hintActions.onclick = (e) => {
+    const act = e.target.dataset?.act;
+    if (!act) return;
+    const q = questions.find((x) => x.id === selectedId);
+    if (!q) return;
+    q.status = q.status === act ? "new" : act; // tap again to clear
+    renderQueue();
+  };
 })();

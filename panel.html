@@ -13,15 +13,31 @@
     <button id="btnStop" disabled>Stop</button>
     <a href="options.html" target="_blank" class="link">Settings</a>
   </div>
-  <div id="status" class="status">Idle. Click 1, choose the Chrome Tab with the meeting and tick "Share tab audio" (on Linux only tab audio works, not Entire screen). Then click 2.</div>
+  <div id="status" class="status">Ready. Click 1 and pick the meeting's Chrome Tab with "Share tab audio" ticked, then click 2.</div>
 </header>
 
 <section id="hint" class="hint empty">
-  <div class="qtype" id="qtype"></div>
+  <div class="hintTop">
+    <div class="qtype" id="qtype"></div>
+    <div id="hintState" class="hintState"></div>
+  </div>
   <div class="question" id="question">Waiting for a question…</div>
   <div class="stories" id="stories"></div>
   <div class="keywords" id="keywords"></div>
   <div class="watch" id="watch"></div>
+  <div class="hintActions" id="hintActions" hidden>
+    <button data-act="answering" class="act">Answer this</button>
+    <button data-act="later" class="act">Think about it</button>
+    <button data-act="dismissed" class="act">No action</button>
+  </div>
+</section>
+
+<section class="queue">
+  <div class="queueHead">
+    <span>Questions</span>
+    <button id="btnSave" class="small" disabled>Save transcript</button>
+  </div>
+  <ol id="questions" class="questions"><li class="qEmpty">Detected questions will appear here. Click one to bring its hint back.</li></ol>
 </section>
 
 <section class="pace">
