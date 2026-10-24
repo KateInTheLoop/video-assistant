@@ -238,8 +238,12 @@ function beginSessionIfNeeded() {
   lastHint = null;
   scheduler.onCandidateSpeaks(); // clears any pending interviewer text
   clearTimeout(hintTimer);
+  questions = []; selectedId = null;
   renderTranscript();
+  renderQueue();
   ui.hint.classList.add("empty");
+  ui.hintState.textContent = "";
+  ui.hintActions.hidden = true;
   ui.qtype.textContent = ""; ui.question.textContent = "Waiting for a question…";
   ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
 }

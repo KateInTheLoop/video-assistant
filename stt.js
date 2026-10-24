@@ -84,6 +84,7 @@ export class SttStream {
     this.ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.type === "Results") {
+        this.retries = 0; // a stable connection: data is flowing
         const alt = msg.channel?.alternatives?.[0];
         const text = alt?.transcript?.trim();
         if (!text) return;
@@ -96,7 +97,6 @@ export class SttStream {
       }
     };
     this.ws.onclose = (e) => { if (e.code !== 1000 && !this.stopped) this.reconnect(e); };
-    this.retries = 0;
   }
 
   // Retry with backoff while the media stream is still live; surface the failure after the last attempt.
@@ -142,6 +142,8 @@ export class SttStream {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "CloseStream" }));
       this.ws.close(1000);
+    } else if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.ws.close(); // abort the handshake so a late open cannot leak a session
     }
     this.ctx?.close();
     this.ws = null; this.ctx = null;
