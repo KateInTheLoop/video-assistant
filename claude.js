@@ -38,6 +38,25 @@ async function call(apiKey, body, betas, timeoutMs = PREP_TIMEOUT_MS) {
   return { data: JSON.parse(text), usage: msg.usage || {}, model: msg.model };
 }
 
+// A lightweight auth probe: a 1-token message. 200/400 means the key works; 401/403 means it does not.
+export async function checkAnthropicKey(apiKey) {
+  if (!apiKey) return { ok: false, reason: "No Anthropic key saved." };
+  let res;
+  try {
+    res = await fetch(API, {
+      method: "POST",
+      headers: headers(apiKey),
+      body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+    });
+  } catch (e) {
+    return { ok: false, reason: `Cannot reach api.anthropic.com (${e.message}).` };
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, reason: `Anthropic rejected the key (HTTP ${res.status}). Check the key in Settings.` };
+  if (res.ok || res.status === 400) return { ok: true, reason: "Key OK." };
+  const body = await res.text().catch(() => "");
+  return { ok: false, reason: `Anthropic returned HTTP ${res.status}. ${body.slice(0, 160)}` };
+}
+
 // --- Live hint -------------------------------------------------------------
 
 // Resolves to { hint, usage, ms, model }. The caller validates `hint` and records diagnostics.
@@ -108,7 +127,7 @@ const GAP_SCHEMA = {
   type: "object", additionalProperties: false, required: ["questions"],
   properties: {
     questions: {
-      type: "array", minItems: 8, maxItems: 14,
+      type: "array",
       items: {
         type: "object", additionalProperties: false, required: ["q", "story"],
         properties: {
