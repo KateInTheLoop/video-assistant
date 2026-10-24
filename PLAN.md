@@ -68,3 +68,4 @@ Goal: move testable logic out of panel.js so the agent can verify without a brow
 - W1 Windows: system audio via `getDisplayMedia` screen share with audio (works on Windows/ChromeOS), fallback to tab audio. Test on Windows.
 - P1 Practice mode: Claude plays interviewer with browser TTS, same pipeline, debrief at the end.
 - F1 Firefox port: popup window instead of side panel already; replace `chrome.*` with `browser.*` shim.
+- S1 AssemblyAI as a second STT provider (added 2026-10-24). `stt-assemblyai.js` with the same `SttStream` interface (Universal-Streaming WebSocket, short-lived token fetched with the API key; verify CORS on the token endpoint from an extension page). Settings: provider dropdown + AssemblyAI key field; `lib/settings.js` validates per provider (AssemblyAI keys are 32 hex, Deepgram 40). Then compare the two in a real call: latency, accent robustness, cost per hour. Keep whichever wins as default.
