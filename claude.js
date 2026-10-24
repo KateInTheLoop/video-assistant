@@ -88,6 +88,28 @@ const STORIES_SCHEMA = {
   },
 };
 
+// PDF -> plain text. Browsers have no dependency-free PDF parser, so Claude reads the file
+// once; Haiku keeps it to a few seconds. The result lands in the CV textarea like any other
+// upload, so the user can check it before anything else uses it.
+const CV_TEXT_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["text"],
+  properties: { text: { type: "string", description: "The CV as plain text: headings, bullets as '- ', one blank line between sections. No commentary." } },
+};
+
+export async function cvTextFromPdf({ apiKey, base64 }) {
+  const { data } = await call(apiKey, {
+    model: "claude-haiku-5-5",
+    max_tokens: 8000,
+    output_config: { format: { type: "json_schema", schema: CV_TEXT_SCHEMA } },
+    system: "Transcribe this CV to plain text, faithfully and completely. Keep the order, headings and bullet points; drop page numbers and repeated headers. Respond only with the JSON object.",
+    messages: [{ role: "user", content: [
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+      { type: "text", text: "Transcribe the CV." },
+    ] }],
+  }, []);
+  return data.text;
+}
+
 export async function extractStories({ apiKey, model, cvText, jobDescription }) {
   const { data } = await call(apiKey, {
     model,

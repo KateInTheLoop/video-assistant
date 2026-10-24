@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from "./storage.js";
-import { extractStories, storyFromAnswer, gapReport } from "./claude.js";
+import { extractStories, storyFromAnswer, gapReport, cvTextFromPdf } from "./claude.js";
+import { cvTextFromFile } from "./lib/cvFile.js";
 import { exportBank, importBank, mergeStories, normalizeLikely } from "./lib/bank.js";
 import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
@@ -9,6 +10,12 @@ import { checkAssemblyAiKey } from "./stt-assemblyai.js";
 import { checkAnthropicKey } from "./claude.js";
 
 const $ = (id) => document.getElementById(id);
+// Chunked so a multi-megabyte PDF does not blow the argument limit of String.fromCharCode.
+function bytesToBase64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "candidateName", "cvText", "jobDescription"];
 const KEY_FIELDS = ["anthropicKey", "deepgramKey", "assemblyaiKey"];
@@ -252,10 +259,35 @@ async function load() {
     st.className = r.ok ? "status" : "status error";
     st.textContent = r.reason;
   };
+  // Upload: every format ends up as plain text in the textarea, which then autosaves.
+  // Only PDFs need Claude (one short Haiku call); DOCX and text are parsed locally.
+  $("btnCvUpload").onclick = () => $("cvFile").click();
+  $("cvFile").onchange = async () => {
+    const file = $("cvFile").files[0]; if (!file) return;
+    const st = $("cvStatus");
+    const isPdf = /\.pdf$/i.test(file.name);
+    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first, or upload a DOCX/TXT."; return; }
+    if (file.size > 8 * 1024 * 1024) { st.textContent = "That file is over 8 MB. Export a smaller PDF or paste the text."; return; }
+    st.textContent = isPdf ? "Reading the PDF with Claude\u2026 (a few seconds)" : "Reading\u2026";
+    $("btnCvUpload").disabled = true;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const text = await cvTextFromFile({
+        name: file.name, bytes,
+        pdfToText: isPdf ? (b) => cvTextFromPdf({ apiKey: $("anthropicKey").value.trim(), base64: bytesToBase64(b) }) : null,
+      });
+      if (!text.trim()) throw new Error("No text found in that file. If it is a scanned PDF, paste the text instead.");
+      $("cvText").value = text;
+      $("cvText").dispatchEvent(new Event("input", { bubbles: true })); // autosave like a paste
+      st.textContent = `Loaded ${file.name}: ${text.length.toLocaleString()} characters. Check it reads right, then draft stories.`;
+    } catch (e) { st.textContent = e.message; }
+    finally { $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
+  };
+
   $("btnExtract").onclick = async () => {
     const st = $("extractStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
-    if (!$("cvText").value.trim()) { st.textContent = "Paste a CV first."; return; }
+    if (!$("cvText").value.trim()) { st.textContent = "Upload or paste a CV first."; return; }
     st.textContent = "Asking Claude… (10-30 s)";
     $("btnExtract").disabled = true;
     try {

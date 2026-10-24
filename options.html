@@ -72,8 +72,13 @@
 <small>Chrome remembers the permission for this extension once granted here. If it was blocked, click the lock icon in the address bar and allow the microphone.</small>
 
 <h2>CV and job</h2>
-<label>CV (paste as plain text)</label>
-<textarea id="cvText" placeholder="Paste your CV here"></textarea>
+<label>CV</label>
+<div class="actions" style="margin-top:0">
+  <button id="btnCvUpload">Upload CV (PDF, DOCX, TXT, MD)</button>
+  <input id="cvFile" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" style="display:none">
+  <span id="cvStatus" class="status"></span>
+</div>
+<textarea id="cvText" placeholder="Upload a file above, or paste your CV here as plain text"></textarea>
 <label>Job description for the upcoming interview</label>
 <textarea id="jobDescription" placeholder="Paste the job posting"></textarea>
 <div class="actions">

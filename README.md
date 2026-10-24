@@ -8,7 +8,8 @@ The optional "answer shape" panel names what a strong answer covers and the foll
 1. `chrome://extensions` → enable Developer mode → Load unpacked → pick this folder.
 2. Click the extension icon → the coach opens as its own window. Drag it to the second monitor.
 3. Open Settings (link in the window header): add an Anthropic API key and a Deepgram API key,
-   paste the CV and job description, click "Draft stories from CV", edit the stories, Save.
+   upload the CV (PDF, DOCX, TXT or MD) or paste it, paste the job description, click "Draft stories from CV", edit the stories.
+   DOCX and text files are parsed locally; a PDF is transcribed by Claude once (a few seconds) and lands as editable text.
 
 ## Use
 1. Join the interview in Meet / Zoom web / Teams web in a Chrome tab.
