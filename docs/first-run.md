@@ -17,7 +17,7 @@ If the card shows **Errors**, click it and paste the text into `STATE.md` → "H
 2. Click **Settings** in the window header.
 3. Paste the **Anthropic API key** and the **Deepgram API key**. Deepgram: sign up at deepgram.com, create a key, free credit included.
 4. Click **Test microphone** and allow the mic when Chrome asks. This is the one permission prompt.
-5. Paste the **CV** as plain text and the **job description**. Click **Draft stories from CV**.
+5. Click **Upload CV** and pick your PDF, DOCX, TXT or MD file (or paste the text). Check the text reads right. Paste the **job description**. Click **Draft stories from CV**.
 6. Edit each story until it sounds like you. Delete anything that is not true.
 7. Answer the **Guided story interview** questions you have real stories for. Skip the rest.
 8. Click **Find gaps for this job**. Add stories for any ⚠ lines you can.
