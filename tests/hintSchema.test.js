@@ -36,6 +36,8 @@ test("story beats and cv leads are labels: short, no first person, no sentences;
   assert.deepEqual(r.hint.stories[0].beats, ["Two ERPs, one ledger", "Close from 9 to 5 days", "fourth beat"]);
   assert.deepEqual(r.hint.cv_leads, ["Oracle Fusion migration at Dropbox", "US GAAP reporting", "SOX controls"]);
   assert.ok(r.errors.some((e) => /rejected beat: I led/.test(e)));
+  const nums = validateHint({ ...good, cv_leads: ["$1.2M ARR migration", "Node.js and v2.0 cutover", "Close in 4.5 days", "Done. Then more"] }, bank).hint.cv_leads;
+  assert.deepEqual(nums, ["$1.2M ARR migration", "Node.js and v2.0 cutover", "Close in 4.5 days"]);
   assert.deepEqual(validateHint(good, bank).hint.cv_leads, []);
   assert.deepEqual(validateHint(good, bank).hint.stories[0].beats, []);
 });
