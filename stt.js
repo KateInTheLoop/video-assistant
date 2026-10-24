@@ -1,5 +1,22 @@
 import { backoffDelays } from "./lib/backoff.js";
 
+// A WebSocket error carries no status code, so when the socket fails we ask the REST API
+// with the same key to find out whether it is the key, the account, or the network.
+export async function checkDeepgramKey(apiKey) {
+  if (!apiKey) return { ok: false, reason: "No Deepgram key saved." };
+  let res;
+  try {
+    res = await fetch("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${apiKey}` } });
+  } catch (e) {
+    return { ok: false, reason: `Cannot reach api.deepgram.com (${e.message}). Check network, VPN or firewall.` };
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, reason: `Deepgram rejected the key (HTTP ${res.status}). Create a new key at console.deepgram.com with Member or Owner scope and paste it again.` };
+  if (res.status === 402) return { ok: false, reason: "Deepgram says the account has no credit (HTTP 402)." };
+  if (!res.ok) return { ok: false, reason: `Deepgram returned HTTP ${res.status}.` };
+  const projects = (await res.json().catch(() => ({}))).projects || [];
+  return { ok: true, reason: `Key OK (${projects.length} project${projects.length === 1 ? "" : "s"}).` };
+}
+
 // One Deepgram streaming connection per audio source (interviewer tab, candidate mic).
 // Keeping the streams separate is what lets us know who said what.
 export class SttStream {
@@ -58,7 +75,10 @@ export class SttStream {
 
     await new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
-      this.ws.onerror = () => reject(new Error(`Deepgram connection failed (${this.speaker})`));
+      this.ws.onerror = async () => {
+        const probe = await checkDeepgramKey(this.apiKey);
+        reject(new Error(`Deepgram connection failed (${this.speaker}). ${probe.reason}`));
+      };
     });
 
     this.ws.onmessage = (ev) => {
