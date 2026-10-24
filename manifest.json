@@ -8,7 +8,8 @@
   ],
   "host_permissions": [
     "https://api.anthropic.com/*",
-    "https://api.deepgram.com/*"
+    "https://api.deepgram.com/*",
+    "https://streaming.assemblyai.com/*"
   ],
   "background": {
     "service_worker": "background.js",

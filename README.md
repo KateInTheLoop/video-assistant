@@ -17,5 +17,5 @@ Not an answer generator: hints are capped at a few keywords and may only point a
 
 ## Notes
 - Tab-audio capture works on every OS. Whole-system audio capture only works on Windows and ChromeOS, so tab capture is the default.
-- Speech to text is Deepgram Nova-3 (robust to accents, ~300 ms). Claude Opus 5.5 produces the hints with a structured JSON schema.
+- Speech to text is Deepgram Nova-3 by default (robust to accents, ~300 ms); AssemblyAI Universal-Streaming is available as an alternative/backup provider, selectable in Settings. Claude Opus 5.5 produces the hints with a structured JSON schema.
 - Nothing is uploaded except the recent transcript text (to Anthropic) and the audio (to Deepgram).

@@ -35,13 +35,23 @@
 <h2>Keys</h2>
 <div class="row">
   <div><label>Anthropic API key</label><input id="anthropicKey" type="password" placeholder="sk-ant-..."></div>
-  <div><label>Deepgram API key (speech to text)</label><input id="deepgramKey" type="password"></div>
+  <div><label>Speech-to-text provider</label>
+    <select id="sttProvider">
+      <option value="deepgram">Deepgram (Nova-3)</option>
+      <option value="assemblyai">AssemblyAI (Universal-Streaming) — backup</option>
+    </select></div>
+</div>
+<div class="row">
+  <div><label>Deepgram API key</label><input id="deepgramKey" type="password" placeholder="40-character key"></div>
+  <div><label>AssemblyAI API key</label><input id="assemblyaiKey" type="password" placeholder="32-character key"></div>
 </div>
 <div class="actions">
   <button id="btnTestAnthropic">Test Anthropic key</button>
   <button id="btnTestDeepgram">Test Deepgram key</button>
+  <button id="btnTestAssemblyai">Test AssemblyAI key</button>
   <span id="keyStatus" class="status"></span>
 </div>
+<small>Deepgram is the default. AssemblyAI is an alternative/backup provider — pick whichever you have a working key for; only the selected one is used for live captions.</small>
 <div class="row">
   <div><label>Claude model</label>
     <select id="model">
