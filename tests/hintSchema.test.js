@@ -31,10 +31,10 @@ test("caps counts", () => {
 test("story beats and cv leads are labels: short, no first person, no sentences; capped", () => {
   const r = validateHint({ ...good,
     stories: [{ title: "Billing migration", cue: "same kind of system change", beats: ["Two ERPs, one ledger", "I led the cutover", "Close from 9 to 5 days", "Audit sign-off clean.", "fourth beat", "fifth"] }],
-    cv_leads: ["Oracle Fusion migration at Dropbox", "I ran AP in Warsaw", "US GAAP reporting", "SOX controls", "fifth lead"],
+    cv_leads: ["ERP migration at Acme", "I ran AP in Riverton", "GAAP reporting", "internal controls", "fifth lead"],
   }, bank);
   assert.deepEqual(r.hint.stories[0].beats, ["Two ERPs, one ledger", "Close from 9 to 5 days", "fourth beat"]);
-  assert.deepEqual(r.hint.cv_leads, ["Oracle Fusion migration at Dropbox", "US GAAP reporting", "SOX controls"]);
+  assert.deepEqual(r.hint.cv_leads, ["ERP migration at Acme", "GAAP reporting", "internal controls"]);
   assert.ok(r.errors.some((e) => /rejected beat: I led/.test(e)));
   const nums = validateHint({ ...good, cv_leads: ["$1.2M ARR migration", "Node.js and v2.0 cutover", "Close in 4.5 days", "Done. Then more"] }, bank).hint.cv_leads;
   assert.deepEqual(nums, ["$1.2M ARR migration", "Node.js and v2.0 cutover", "Close in 4.5 days"]);

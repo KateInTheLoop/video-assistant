@@ -1,6 +1,6 @@
 // Raw Messages API calls. No bundler in this extension, so we use fetch directly.
 import { parsePartialJson } from "./lib/partialJson.js";
-import { buildHintRequest } from "./lib/hintRequest.js";
+import { buildHintRequest, buildPrewarmRequest } from "./lib/hintRequest.js";
 import { STORY_FROM_ANSWER_SCHEMA } from "./lib/storyInterview.js";
 
 const API = "https://api.anthropic.com/v1/messages";
@@ -73,6 +73,17 @@ export async function countHintTokens({ apiKey, body }) {
 // --- Live hint -------------------------------------------------------------
 
 // Resolves to { hint, usage, ms, model }. The caller validates `hint` and records diagnostics.
+// Seed the prompt cache before the first question so the first hint is as fast as the rest.
+// Not parsed as a hint: one token is all we ask for.
+export async function prewarmHint({ apiKey, ...ctx }) {
+  if (!apiKey) throw new Error("No Anthropic API key set (Settings).");
+  const t0 = performance.now();
+  const res = await fetch(API, { method: "POST", headers: headers(apiKey, ["server-side-fallback-2026-07-01"]), body: JSON.stringify(buildPrewarmRequest(ctx)) });
+  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const msg = await res.json();
+  return { usage: msg.usage || {}, ms: performance.now() - t0 };
+}
+
 // Streamed: the card can show the question, stories and keywords about a second before the
 // answer shape and follow-ups finish. onPartial receives the JSON parsed so far (see
 // lib/partialJson.js) on every delta; onFirstToken fires once. Returns the complete hint.

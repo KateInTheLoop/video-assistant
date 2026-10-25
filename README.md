@@ -42,3 +42,28 @@ first partial render, validator drops and errors, with millisecond offsets from 
 The status line shows first-token and total time per hint and how long after the interviewer's
 speech it arrived, and Save transcript also downloads an `interview-….trace.log`. It changes
 nothing about what is sent to Claude.
+
+## Install from a release
+
+Each tagged version has a ready `.zip` on the repo's Releases page.
+
+1. Download `interview-coach-v<version>.zip` and unzip it.
+2. Open `chrome://extensions`, turn on **Developer mode** (top right).
+3. Click **Load unpacked** and select the unzipped folder.
+4. Open the options page and add your API keys. See `docs/first-run.md`.
+
+## Build and release (maintainers)
+
+- `npm run scan` — hard credential check (also a `pre-push` hook via `npm run hooks`, and in CI).
+- `npm test` — unit tests.
+- `npm run build` — writes `dist/interview-coach-v<version>.zip`.
+
+CI runs the scan, tests and a build on every push and PR. To cut a release, bump `version` in
+`manifest.json`, commit, then push a matching tag:
+
+```
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The Release workflow checks the tag matches the manifest, runs the scan and tests, builds the
+zip and publishes a GitHub Release with it attached.

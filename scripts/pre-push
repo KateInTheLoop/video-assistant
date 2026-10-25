@@ -1,0 +1,4 @@
+#!/bin/sh
+# Block a push when the secret scan finds a real-looking credential.
+# Install:  ln -sf ../../scripts/pre-push .git/hooks/pre-push   (or: npm run hooks)
+exec python3 -I "$(git rev-parse --show-toplevel)/scripts/check_secrets.py"

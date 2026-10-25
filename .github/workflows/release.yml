@@ -1,0 +1,37 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release and upload the asset
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Secret scan (hard credential check)
+        run: python3 -I scripts/check_secrets.py
+      - name: Tests
+        run: node --test tests/
+      - name: Verify tag matches manifest version
+        run: |
+          MANIFEST="v$(node -p "require('./manifest.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$MANIFEST" ]; then
+            echo "tag $GITHUB_REF_NAME != manifest $MANIFEST"; exit 1
+          fi
+      - name: Build package
+        run: node scripts/build.mjs
+      - name: Publish GitHub Release with the installable zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          body: |
+            Download the `.zip`, unzip it, then in Chrome open `chrome://extensions`,
+            enable Developer mode, and choose **Load unpacked** on the unzipped folder.
+            Add your API keys on the options page. See `docs/first-run.md`.
