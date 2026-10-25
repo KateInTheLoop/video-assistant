@@ -4,10 +4,11 @@ import { cvTextFromFile } from "./lib/cvFile.js";
 import { RESOURCE_KINDS } from "./lib/context.js";
 import { buildHintRequest, contextReport } from "./lib/hintRequest.js";
 import { countHintTokens } from "./claude.js";
-import { exportBank, importBank, mergeStories, normalizeLikely } from "./lib/bank.js";
+import { exportBank, importBank, mergeStories, normalizeLikely, exportProfile, importProfile } from "./lib/bank.js";
 import { STANDARD_QUESTIONS, nextIndex } from "./lib/storyInterview.js";
 import { summarize } from "./lib/diag.js";
 import { validateSettings } from "./lib/settings.js";
+import { addCandidate, addJob, duplicateCandidate, duplicateJob, removeCandidate, removeJob, setActive, candidateLabel, jobLabel } from "./lib/profiles.js";
 import { checkDeepgramKey } from "./stt.js";
 import { checkAssemblyAiKey } from "./stt-assemblyai.js";
 import { checkAnthropicKey } from "./claude.js";
@@ -20,11 +21,49 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "contextTier", "candidateName", "cvText", "jobDescription"];
-const KEY_FIELDS = ["anthropicKey", "deepgramKey", "assemblyaiKey"];
+const fields = ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "contextTier", "candidateName", "cvText", "jobTitle", "jobDescription"];
 let stories = [];
 let likely = [];
-let resources = [];   // [{kind, text}] extra materials for the coach
+let resources = [];   // [{kind, text}] extra materials for the coach (candidate's + job's, flattened)
+let profiles = null;  // the candidate / job lists; the flat fields above belong to the active pair
+
+// --- Tabs: Start is one screen, Content is everything the coach draws on ---------------
+const TABS = ["start", "content"];
+function showTab(name) {
+  if (!TABS.includes(name)) name = "start";
+  for (const t of TABS) { $(`tab-${t}`).classList.toggle("on", t === name); $(`pane-${t}`).hidden = t !== name; }
+  try { localStorage.setItem("settingsTab", name); } catch {}
+}
+function downloadJson(text, filename) {
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
+const slug = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unnamed";
+
+function renderProfiles() {
+  const fill = (sel, map, active, label) => {
+    sel.innerHTML = "";
+    for (const [id, obj] of Object.entries(map)) { const o = document.createElement("option"); o.value = id; o.textContent = label(obj); sel.appendChild(o); }
+    sel.value = active ?? "";
+  };
+  fill($("candidateSel"), profiles.candidates, profiles.activeCandidate, candidateLabel);
+  fill($("jobSel"), profiles.jobs, profiles.activeJob, jobLabel);
+  $("cDel").disabled = Object.keys(profiles.candidates).length <= 1;
+  $("jDel").disabled = Object.keys(profiles.jobs).length <= 1;
+}
+
+// Switching or managing profiles: flush pending edits into the current pair first so nothing
+// typed in the last moment is lost, apply the change to a fresh copy, store, reload.
+async function withProfiles(fn) {
+  clearTimeout(autosaveTimer);
+  await save();
+  const next = fn((await loadSettings()).profiles);
+  if (!next) return;
+  await saveSettings({ profiles: next });
+  await load();
+}
 
 function renderStories() {
   const box = $("stories");
@@ -47,7 +86,7 @@ function renderStories() {
       el.value = s[el.dataset.k] || "";
       el.oninput = () => { stories[i][el.dataset.k] = el.value; };
     }
-    card.querySelector("[data-del]").onclick = () => { stories.splice(i, 1); renderStories(); };
+    card.querySelector("[data-del]").onclick = () => { stories.splice(i, 1); renderStories(); $("stories").dispatchEvent(new Event("input", { bubbles: true })); };
     box.appendChild(card);
   });
 }
@@ -61,7 +100,7 @@ function renderResources() {
     const sel = document.createElement("select");
     for (const k of RESOURCE_KINDS) { const o = document.createElement("option"); o.value = k.id; o.textContent = k.label; sel.appendChild(o); }
     sel.value = RESOURCE_KINDS.some((k) => k.id === r.kind) ? r.kind : "other";
-    sel.onchange = () => { resources[i].kind = sel.value; };
+    sel.onchange = () => { resources[i].kind = sel.value; $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
     const ta = document.createElement("textarea");
     ta.placeholder = "Paste the text here";
     ta.value = r.text || "";
@@ -84,6 +123,12 @@ function renderContext() {
     : `<tr style="color:var(--muted)"><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>not sent at this tier</td></tr>`).join("");
   const warn = rep.cacheable ? "" : `<tr><td colspan="2" style="color:var(--warn)">Under the ${rep.cacheMin}-token cache minimum: nothing will cache. Add stories, a CV or materials.</td></tr>`;
   $("ctxTable").innerHTML = `<tr><th>Component</th><th>Tokens (est.)</th></tr>${rows}<tr><th>Total cached prefix</th><th>~${rep.total.toLocaleString()}</th></tr>${warn}`;
+  // The Start tab gets one honest line instead of the table.
+  const n = stories.filter((s) => s.title?.trim()).length;
+  const bits = [`${n} ${n === 1 ? "story" : "stories"}`, $("cvText").value.trim() ? "CV" : "no CV", $("jobDescription").value.trim() ? "job description" : "no job description"];
+  $("ctxTotal").textContent = `The coach will see ${bits.join(", ")}: about ${rep.total.toLocaleString()} tokens per hint, cached after the first.`
+    + (rep.cacheable ? "" : " That is under the cache minimum, so add stories or a CV on the Content tab.");
+  $("ctxTotal").style.color = rep.cacheable && n ? "" : "var(--warn)";
 }
 
 function renderLikely() {
@@ -151,7 +196,7 @@ function renderInterview() {
   const done = STANDARD_QUESTIONS.filter((q) => stories.some((s) => s.source === "interview" && s.interviewTag === q.tag)).length;
   $("giProgress").textContent = `${done} of ${STANDARD_QUESTIONS.length} answered`;
   const active = i !== -1;
-  $("giQuestion").textContent = active ? STANDARD_QUESTIONS[i].q : "All questions answered or skipped. Edit the stories below, then Save.";
+  $("giQuestion").textContent = active ? STANDARD_QUESTIONS[i].q : "All questions answered or skipped. Edit the stories above.";
   $("giAnswer").style.display = active ? "" : "none";
   $("giSave").disabled = !active; $("giSkip").disabled = !active;
 }
@@ -167,7 +212,8 @@ async function showKeyStatus() {
 }
 
 // Writes the fields that pass validation and returns errors for the rest.
-// A field that fails keeps whatever was stored before.
+// A field that fails keeps whatever was stored before. Flat content fields land in the
+// active candidate and job (storage.js routes them).
 async function save() {
   const form = {};
   for (const f of fields) form[f] = $(f).value;
@@ -185,7 +231,7 @@ async function saveAndRefresh() {
   st.className = problems.length ? "status error" : "status";
   st.textContent = problems.length
     ? `Not saved: ${problems.join("; ")}. The stored value is shown below.`
-    : "Saved. Everything below is what is stored.";
+    : "Saved. Everything shown is what is stored.";
 }
 
 // Every edit is saved as you go, so nothing is lost if Save is never clicked.
@@ -203,29 +249,64 @@ document.addEventListener("input", () => {
     st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
     showKeyStatus();
     renderContext();
+    profiles = (await loadSettings()).profiles; // a new name or title relabels the dropdowns
+    renderProfiles();
   }, 600);
 });
 
 async function load() {
   const s = await loadSettings();
+  profiles = s.profiles;
   for (const f of fields) $(f).value = s[f] || "";
   $("devMode").checked = !!s.devMode;
   if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-haiku-5-5";
   if (![...$("contextTier").options].some((o) => o.value === $("contextTier").value)) $("contextTier").value = "full";
   stories = s.stories || [];
   resources = s.resources || [];
-  likely = (await chrome.storage.local.get("likelyQuestions")).likelyQuestions || [];
-  renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus();
+  likely = s.likelyQuestions || [];
+  renderProfiles(); renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus();
   renderResources(); renderContext();
 }
 
 (async () => {
   await load();
+  // Tabs: remember the last one; deep links (#mic, #content) open Content.
+  for (const t of TABS) $(`tab-${t}`).onclick = () => showTab(t);
+  let initialTab = "start";
+  try { initialTab = localStorage.getItem("settingsTab") || "start"; } catch {}
+  if (location.hash === "#mic" || location.hash === "#content") initialTab = "content";
+  showTab(initialTab);
+  if (location.hash === "#mic") { $("micBox").open = true; $("mic").scrollIntoView(); }
+
+  // Candidate / job pickers and management
+  $("candidateSel").onchange = () => withProfiles((p) => setActive(p, { candidate: $("candidateSel").value }));
+  $("jobSel").onchange = () => withProfiles((p) => setActive(p, { job: $("jobSel").value }));
+  $("cNew").onclick = () => { const name = prompt("Candidate's first name (you can change it later):", ""); if (name === null) return; withProfiles((p) => addCandidate(p, { name: name.trim() }).profiles); };
+  $("jNew").onclick = () => { const title = prompt("Job title, e.g. Senior Accountant, Northwind:", ""); if (title === null) return; withProfiles((p) => addJob(p, { title: title.trim() }).profiles); };
+  $("cDup").onclick = () => withProfiles((p) => duplicateCandidate(p, p.activeCandidate).profiles);
+  $("jDup").onclick = () => withProfiles((p) => duplicateJob(p, p.activeJob).profiles);
+  $("cDel").onclick = () => withProfiles((p) => confirm(`Delete candidate "${candidateLabel(p.candidates[p.activeCandidate])}" with its CV, stories and materials? This cannot be undone.`) ? removeCandidate(p, p.activeCandidate) : null);
+  $("jDel").onclick = () => withProfiles((p) => confirm(`Delete job "${jobLabel(p.jobs[p.activeJob])}" with its description and materials? This cannot be undone.`) ? removeJob(p, p.activeJob) : null);
+
+  // Whole-profile export / import
+  $("btnExportCand").onclick = async () => { await save(); const p = (await loadSettings()).profiles; const c = p.candidates[p.activeCandidate]; downloadJson(exportProfile("candidate", c), `candidate-${slug(c?.name)}-${new Date().toISOString().slice(0, 10)}.json`); };
+  $("btnExportJob").onclick = async () => { await save(); const p = (await loadSettings()).profiles; const j = p.jobs[p.activeJob]; downloadJson(exportProfile("job", j), `job-${slug(jobLabel(j))}-${new Date().toISOString().slice(0, 10)}.json`); };
+  $("btnImportProfile").onclick = () => $("profileFile").click();
+  $("profileFile").onchange = async () => {
+    const file = $("profileFile").files[0]; if (!file) return;
+    try {
+      const { kind, data } = importProfile(await file.text());
+      await withProfiles((p) => (kind === "candidate" ? addCandidate(p, data) : addJob(p, data)).profiles);
+      $("profileStatus").textContent = `Imported ${kind} "${kind === "candidate" ? candidateLabel(data) : jobLabel(data)}" and made it active.`;
+    } catch (e) { $("profileStatus").textContent = e.message; }
+    $("profileFile").value = "";
+  };
+
   $("giSkip").onclick = () => { giSkipped.add(STANDARD_QUESTIONS[giIndex].tag); $("giAnswer").value = ""; renderInterview(); };
   $("giSave").onclick = async () => {
     const st = $("giStatus");
     const answer = $("giAnswer").value.trim();
-    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (answer.split(/\s+/).length < 15) { st.textContent = "Give a bit more detail (a few sentences)."; return; }
     const q = STANDARD_QUESTIONS[giIndex];
     st.textContent = "Tidying into a story card…"; $("giSave").disabled = true;
@@ -234,7 +315,7 @@ async function load() {
       stories.push({ ...card, source: "interview", interviewTag: q.tag, missing: undefined,
         result: card.missing?.length ? `${card.result}\n\nStill missing: ${card.missing.join("; ")}` : card.result });
       $("giAnswer").value = "";
-      renderStories(); renderInterview(); await save();
+      renderStories(); renderInterview(); await save(); renderContext();
       st.textContent = `Saved "${card.title}".`;
     } catch (e) { st.textContent = e.message; }
     finally { $("giSave").disabled = false; }
@@ -251,23 +332,17 @@ async function load() {
       st.textContent = `OK: ${label}. Go back to the coach window and click "Capture my mic".`;
     } catch (e) { st.textContent = `${e.name}: ${e.message}`; }
   };
-  if (location.hash === "#mic") $("mic").scrollIntoView();
 
   $("btnGaps").onclick = async () => {
     const st = $("gapStatus");
-    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!stories.length) { st.textContent = "Add some stories first."; return; }
     st.textContent = "Asking Claude…"; $("btnGaps").disabled = true;
     try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); await save(); }
     catch (e) { st.textContent = e.message; }
     finally { $("btnGaps").disabled = false; }
   };
-  $("btnExport").onclick = () => {
-    const blob = new Blob([exportBank(stories, likely)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = `story-bank-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    URL.revokeObjectURL(a.href);
-  };
+  $("btnExport").onclick = () => downloadJson(exportBank(stories, likely), `story-bank-${new Date().toISOString().slice(0, 10)}.json`);
   $("btnImport").onclick = () => $("importFile").click();
   $("importFile").onchange = async () => {
     const file = $("importFile").files[0]; if (!file) return;
@@ -275,7 +350,7 @@ async function load() {
       const { stories: incoming, likelyQuestions } = importBank(await file.text());
       const r = mergeStories(stories, incoming);
       stories = r.stories; if (likelyQuestions.length && !likely.length) likely = likelyQuestions;
-      renderStories(); renderLikely(); renderInterview(); await save();
+      renderStories(); renderLikely(); renderInterview(); await save(); renderContext();
       $("bankStatus").textContent = `Imported ${r.added} stories (${r.skipped} duplicates skipped).`;
     } catch (e) { $("bankStatus").textContent = e.message; }
     $("importFile").value = "";
@@ -285,14 +360,14 @@ async function load() {
   $("btnSave").onclick = saveAndRefresh;
   $("btnTestAnthropic").onclick = async () => {
     const st = $("keyTest");
-    st.className = "status"; st.textContent = "Checking with Anthropic\u2026";
+    st.className = "status"; st.textContent = "Checking with Anthropic…";
     const r = await checkAnthropicKey($("anthropicKey").value.trim());
     st.className = r.ok ? "status" : "status error";
     st.textContent = `Anthropic: ${r.reason}`;
   };
   $("btnTestAssemblyai").onclick = async () => {
     const st = $("keyTest");
-    st.className = "status"; st.textContent = "Checking with AssemblyAI\u2026";
+    st.className = "status"; st.textContent = "Checking with AssemblyAI…";
     const r = await checkAssemblyAiKey($("assemblyaiKey").value.trim());
     st.className = r.ok ? "status" : "status error";
     st.textContent = `AssemblyAI: ${r.reason}`;
@@ -311,9 +386,9 @@ async function load() {
     const file = $("cvFile").files[0]; if (!file) return;
     const st = $("cvStatus");
     const isPdf = /\.pdf$/i.test(file.name);
-    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first, or upload a DOCX/TXT."; return; }
+    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first (Start tab), or upload a DOCX/TXT."; return; }
     if (file.size > 8 * 1024 * 1024) { st.textContent = "That file is over 8 MB. Export a smaller PDF or paste the text."; return; }
-    st.textContent = isPdf ? "Reading the PDF with Claude\u2026 (a few seconds)" : "Reading\u2026";
+    st.textContent = isPdf ? "Reading the PDF with Claude… (a few seconds)" : "Reading…";
     $("btnCvUpload").disabled = true;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -335,7 +410,7 @@ async function load() {
     const file = $("resFile").files[0]; if (!file) return;
     const st = $("resStatus");
     const isPdf = /\.pdf$/i.test(file.name);
-    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first."; return; }
+    if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first (Start tab)."; return; }
     st.textContent = isPdf ? "Reading the PDF with Claude…" : "Reading…";
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -352,7 +427,7 @@ async function load() {
   };
   $("btnCountCtx").onclick = async () => {
     const st = $("ctxStatus");
-    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     st.textContent = "Counting…";
     try {
       const body = buildHintRequest({ model: $("model").value, transcript: [], stories, jobDescription: $("jobDescription").value, cvText: $("cvText").value, resources, tier: $("contextTier").value });
@@ -363,7 +438,7 @@ async function load() {
 
   $("btnExtract").onclick = async () => {
     const st = $("extractStatus");
-    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first."; return; }
+    if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!$("cvText").value.trim()) { st.textContent = "Upload or paste a CV first."; return; }
     st.textContent = "Asking Claude… (10-30 s)";
     $("btnExtract").disabled = true;
@@ -374,8 +449,8 @@ async function load() {
       });
       stories = [...stories, ...out.stories.map((s) => ({ ...s, source: "cv" }))];
       likely = normalizeLikely(out.likely_questions);
-      renderStories(); renderLikely(); renderInterview(); await save();
-      st.textContent = `Drafted ${out.stories.length} stories and saved. Edit them until they sound like you (edits save when you click Save).`;
+      renderStories(); renderLikely(); renderInterview(); await save(); renderContext();
+      st.textContent = `Drafted ${out.stories.length} stories and saved. Edit them until they sound like you.`;
     } catch (e) { st.textContent = e.message; }
     finally { $("btnExtract").disabled = false; }
   };
