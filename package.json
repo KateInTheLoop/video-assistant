@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test tests/",
     "scan": "python3 -I scripts/check_secrets.py",
-    "hooks": "ln -sf ../../scripts/pre-push .git/hooks/pre-push && echo pre-push hook installed"
+    "hooks": "ln -sf ../../scripts/pre-push .git/hooks/pre-push && echo pre-push hook installed",
+    "build": "node scripts/build.mjs"
   }
 }
