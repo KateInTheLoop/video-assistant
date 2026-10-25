@@ -2,7 +2,7 @@ import { loadSettings, appendTranscript, updateLastSession } from "./storage.js"
 import { SttStream } from "./stt.js";
 import { AssemblyAiStream } from "./stt-assemblyai.js";
 import { WebSpeechStream } from "./webspeech.js";
-import { getHint, debrief } from "./claude.js";
+import { getHint, prewarmHint, debrief } from "./claude.js";
 import { mergeFinal } from "./lib/transcript.js";
 import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
@@ -108,6 +108,34 @@ function schedule(plan) {
 
 // --- Hints -----------------------------------------------------------------
 
+// Seed the prompt cache so the first hint of the session reads it instead of writing it
+// (measured: 2.6-5.4 s cold vs 2.0 s warm). One output token; failures are logged, never shown.
+let prewarmTimer = null, lastCacheTouch = 0;
+const CACHE_REFRESH_MS = 50 * 60 * 1000; // the 1h TTL is refreshed by every hint; only a long silence needs this
+function prewarm(reason) {
+  if (!settings.anthropicKey) return;
+  clearTimeout(prewarmTimer);
+  prewarmTimer = setTimeout(async () => {
+    const t = trace.mark("cache.prewarm.start", { reason });
+    try {
+      const r = await prewarmHint({ apiKey: settings.anthropicKey, model: settings.model, stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText, resources: settings.resources, tier: settings.contextTier });
+      lastCacheTouch = Date.now();
+      trace.mark("cache.prewarm.done", { ms: Math.round(r.ms), write: r.usage.cache_creation_input_tokens || 0, read: r.usage.cache_read_input_tokens || 0 });
+    } catch (e) {
+      trace.mark("cache.prewarm.error", { error: e.message });
+      console.warn("cache prewarm failed:", e.message);
+    }
+  }, reason === "session start" ? 0 : 1500); // settings autosave fires often; coalesce
+}
+
+// Partial hints arrive on every streamed token (~80 per hint). Render at most once per frame.
+let pendingPartial = null, partialFrame = 0;
+function renderPartial(h) {
+  pendingPartial = h;
+  if (partialFrame) return;
+  partialFrame = requestAnimationFrame(() => { partialFrame = 0; if (pendingPartial) renderHint(pendingPartial, { partial: true }); pendingPartial = null; });
+}
+
 async function requestHint() {
   clearTimeout(hintTimer);
   const q = scheduler.take(Date.now());
@@ -135,15 +163,17 @@ async function requestHint() {
         const h = provisionalHint(p, titles);
         if (!h) return;
         if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
-        renderHint(h, { partial: true });
+        renderPartial(h);
       },
     });
+    if (partialFrame) { cancelAnimationFrame(partialFrame); partialFrame = 0; } pendingPartial = null;
     const { ok, errors, hint } = validateHint(res.hint, titles);
     if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
     if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) { addQuestion(hint); lastHint = hint; }
     else { if (shownPartial) clearHintCard(); setHintState(""); }
     const cached = !!res.usage.cache_read_input_tokens;
+    lastCacheTouch = Date.now();
     trace.mark("hint.done", { ms: Math.round(res.ms), ttftMs: Math.round(res.ttftMs ?? 0), cached, isQuestion: hint.is_question, out: res.usage.output_tokens, sinceSttFinalMs: trace.since("stt.final") });
     setStatus(settings.devMode
       ? `Hint: first token ${Math.round(res.ttftMs ?? 0)} ms, done ${Math.round(res.ms)} ms${cached ? ", cached" : ""}${sinceFinal != null ? `, ${Math.round(sinceFinal)} ms after speech` : ""}`
@@ -445,6 +475,7 @@ function beginSessionIfNeeded() {
   interim = { interviewer: null, candidate: null };
   lastHint = null;
   scheduler.onCandidateSpeaks(); // clears any pending interviewer text
+  prewarm("session start");
   clearTimeout(hintTimer);
   questions = []; selectedId = null;
   renderTranscript();
@@ -544,7 +575,12 @@ async function stopAll() {
   settings = await loadSettings();
   if (!settings.anthropicKey || !sttKey()) setStatus("Add your API keys in Settings before starting.", true);
   renderBankWarning();
-  chrome.storage.onChanged.addListener(async () => { settings = await loadSettings(); renderBankWarning(); });
+  chrome.storage.onChanged.addListener(async () => {
+    settings = await loadSettings(); renderBankWarning();
+    if (sessionStart !== null) prewarm("settings changed"); // the prefix changed: seed the new one before the next question
+  });
+  // A session that sits quiet for most of an hour (late start, long intro) would lose the cache.
+  setInterval(() => { if (sessionStart !== null && lastCacheTouch && Date.now() - lastCacheTouch > CACHE_REFRESH_MS) prewarm("cache refresh"); }, 60 * 1000);
   ui.tab.onclick = captureTab;
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;

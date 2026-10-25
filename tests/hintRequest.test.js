@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHintRequest, lastHintText } from "../lib/hintRequest.js";
+import { buildPrewarmRequest, buildHintRequest, lastHintText } from "../lib/hintRequest.js";
 
 const ctx = { model: "claude-opus-5-5", stories: [{ title: "A", situation: "s", action: "a", result: "r" }], jobDescription: "JD", cvText: "CV" };
 
@@ -29,4 +29,16 @@ test("last hint goes into the user message, never the cached system prefix", () 
   assert.match(a.messages[0].content, /Conflict with manager .*stories: A; keywords: listen, data/);
   assert.match(b.messages[0].content, /Previous hint shown to the candidate: \(none\)/);
   assert.equal(lastHintText({ is_question: false }), "(none)");
+});
+
+test("prewarm shares the whole cached prefix with a real hint and costs one output token", () => {
+  const ctx = { model: "claude-haiku-5-5", stories: [{ title: "A", situation: "s", action: "a", result: "r" }], jobDescription: "JD", cvText: "CV", resources: [], tier: "full" };
+  const warm = buildPrewarmRequest(ctx);
+  const real = buildHintRequest({ ...ctx, transcript: [{ speaker: "interviewer", text: "Why us?" }], questions: [] });
+  assert.deepEqual(warm.system, real.system);
+  assert.deepEqual(warm.output_config, real.output_config);
+  assert.equal(warm.model, real.model);
+  assert.equal(warm.max_tokens, 1);
+  assert.equal(warm.messages.length, 1);
+  assert.doesNotMatch(JSON.stringify(warm), /Why us/);
 });
