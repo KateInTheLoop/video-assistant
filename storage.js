@@ -10,6 +10,7 @@ export const DEFAULTS = {
   resources: [],
   contextTier: "full",  // lean | standard | full: how much of the above goes to the coach        // [{kind, text}] extra materials for the coach: cover letter, LinkedIn, research, notes
   candidateName: "",
+  devMode: false,       // developer mode: trace points to the console and a .trace.log next to the transcript
 };
 
 export async function loadSettings() {

@@ -9,6 +9,8 @@ import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
 import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
+import { createTrace, formatTrace } from "./lib/trace.js";
+import { provisionalHint } from "./lib/hintSchema.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -36,9 +38,13 @@ let hintTimer = null;
 let lastHint = null;                 // last validated hint, so follow-ups keep the same story
 let talkStart = null, talkTimer = null;
 let lastCandidateAt = 0;             // last time the candidate's mic produced speech
+// Trace points for the whole session. Always recorded (cheap); printed to the console and saved
+// next to the transcript only in developer mode (Settings → Diagnostics).
+const trace = createTrace({ onMark: (e) => { if (settings?.devMode) console.debug(`+${e.t}ms ${e.event}`, e); } });
 let sessionStart = null;
 
 function setStatus(msg, isError = false) {
+  if (isError) trace.mark("status.error", { msg });
   ui.status.textContent = msg;
   ui.status.classList.toggle("error", isError);
 }
@@ -70,12 +76,14 @@ function lineEl(speaker, text, isInterim) {
 // --- Speech events -----------------------------------------------------------
 
 function onInterim({ speaker, text }) {
+  if (interim[speaker] === null) trace.mark("stt.interim.start", { speaker });
   interim[speaker] = text;
   if (speaker === "candidate") { lastCandidateAt = Date.now(); scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
   renderTranscript();
 }
 
 function onFinal({ speaker, text, speechFinal }) {
+  trace.mark("stt.final", { speaker, chars: text.length, speechFinal: !!speechFinal });
   interim[speaker] = null;
   mergeFinal(transcript, { speaker, text });
   renderTranscript();
@@ -87,11 +95,13 @@ function onFinal({ speaker, text, speechFinal }) {
 }
 
 function onUtteranceEnd({ speaker }) {
+  trace.mark("stt.utteranceEnd", { speaker });
   if (speaker === "interviewer") schedule(scheduler.onUtteranceEnd(Date.now()));
 }
 
 function schedule(plan) {
   if (!plan) return;
+  trace.mark("sched.plan", { fireInMs: plan.fireInMs });
   clearTimeout(hintTimer);
   hintTimer = setTimeout(requestHint, plan.fireInMs);
 }
@@ -107,23 +117,40 @@ async function requestHint() {
     return;
   }
   const t0 = performance.now();
+  const sinceFinal = trace.since("stt.final");
+  trace.mark("hint.request", { chars: q.length, sinceSttFinalMs: sinceFinal, model: settings.model });
   let res = null;
+  let shownPartial = false;
+  const titles = settings.stories.map((s) => s.title);
   setHintState("Analysing\u2026");
   try {
     res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
       resources: settings.resources, questions, lastHint, tier: settings.contextTier,
+      onFirstToken: (ms) => trace.mark("hint.ttft", { ms: Math.round(ms) }),
+      // Show what has streamed so far: the question, stories and keywords arrive about a
+      // second before the answer shape does. Provisional until the final validated hint.
+      onPartial: (p) => {
+        const h = provisionalHint(p, titles);
+        if (!h) return;
+        if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
+        renderHint(h, { partial: true });
+      },
     });
-    const { ok, errors, hint } = validateHint(res.hint, settings.stories.map((s) => s.title));
-    if (errors.length) console.warn("hint validator:", errors);
+    const { ok, errors, hint } = validateHint(res.hint, titles);
+    if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
     if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) { addQuestion(hint); lastHint = hint; }
-    else setHintState("");
-    const cached = res.usage.cache_read_input_tokens ? ", cached" : "";
-    setStatus(`Hint in ${Math.round(res.ms)} ms${cached}`);
+    else { if (shownPartial) clearHintCard(); setHintState(""); }
+    const cached = !!res.usage.cache_read_input_tokens;
+    trace.mark("hint.done", { ms: Math.round(res.ms), ttftMs: Math.round(res.ttftMs ?? 0), cached, isQuestion: hint.is_question, out: res.usage.output_tokens, sinceSttFinalMs: trace.since("stt.final") });
+    setStatus(settings.devMode
+      ? `Hint: first token ${Math.round(res.ttftMs ?? 0)} ms, done ${Math.round(res.ms)} ms${cached ? ", cached" : ""}${sinceFinal != null ? `, ${Math.round(sinceFinal)} ms after speech` : ""}`
+      : `Hint in ${Math.round(res.ms)} ms${cached ? ", cached" : ""}`);
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
+    trace.mark("hint.error", { ms: Math.round(performance.now() - t0), error: e.message });
     setHintState(e.message, true);
     setStatus(e.message, true);
     recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
@@ -142,6 +169,7 @@ async function recordDiag(info) {
 // Back to the waiting state: no question selected, nothing stale left on the card.
 function clearHintCard() {
   ui.hint.classList.add("empty");
+  ui.hint.classList.remove("partial");
   ui.hintState.textContent = "";
   ui.hintActions.hidden = true;
   ui.qtype.textContent = "";
@@ -241,9 +269,10 @@ function setQuestionStatus(q, status) {
   renderQueue();
 }
 
-function renderHint(h) {
+function renderHint(h, { partial = false } = {}) {
   ui.hint.classList.remove("empty");
-  ui.hintState.textContent = "";
+  ui.hint.classList.toggle("partial", partial);
+  ui.hintState.textContent = partial ? "\u2026" : "";
   ui.hintState.className = "hintState";
   ui.qtype.textContent = h.follow_up ? `${h.question_type} \u00b7 follow-up, same story` : h.question_type;
   ui.question.textContent = h.question_summary;
@@ -321,7 +350,7 @@ function renderHint(h) {
   ui.cvLeads.hidden = !leads.length;
 
   renderActions();
-  ui.hintActions.hidden = false;
+  ui.hintActions.hidden = partial; // chips need a queue entry, which only the final hint creates
 }
 
 // The chips mirror the selected question's state, so "Answer this" reads "Answering ✓ done"
@@ -374,9 +403,18 @@ function saveTranscript() {
   const blob = new Blob([header + body + "\n" + gapBlock], { type: "text/plain" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `interview-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  a.download = `interview-${stamp}.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
+  if (settings.devMode && trace.entries.length) {
+    const tb = new Blob([`Interview Coach trace (ms from session start)\n${formatTrace(trace.entries)}\n`], { type: "text/plain" });
+    const ta = document.createElement("a");
+    ta.href = URL.createObjectURL(tb);
+    ta.download = `interview-${stamp}.trace.log`;
+    ta.click();
+    URL.revokeObjectURL(ta.href);
+  }
 }
 
 // --- Talk clock ------------------------------------------------------------
@@ -401,6 +439,8 @@ function stopTalkClock() {
 function beginSessionIfNeeded() {
   if (sessionStart !== null) return;
   sessionStart = Date.now();
+  trace.reset();
+  trace.mark("session.start", { provider: settings.sttProvider, model: settings.model, tier: settings.contextTier, stories: settings.stories?.length || 0 });
   transcript = [];
   interim = { interviewer: null, candidate: null };
   lastHint = null;
@@ -421,7 +461,7 @@ function sttProviderName() {
 }
 
 function sttFor(speaker) {
-  const opts = { apiKey: sttKey(), speaker, onInterim, onFinal, onUtteranceEnd, onError: (e) => setStatus(e.message, true) };
+  const opts = { apiKey: sttKey(), speaker, onInterim, onFinal, onUtteranceEnd, onError: (e) => { trace.mark("stt.error", { speaker, msg: e.message }); setStatus(e.message, true); } };
   const stream = settings.sttProvider === "assemblyai" ? new AssemblyAiStream(opts) : new SttStream(opts);
   stream.onStatus = (msg) => setStatus(msg);
   return stream;

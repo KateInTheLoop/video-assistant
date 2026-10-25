@@ -114,3 +114,7 @@ button.small { font-size: 12px; padding: 5px 10px; min-height: 0; text-transform
 .shapeList { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .followUps { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .followUps .fu { color: var(--interviewer); font-size: 13px; }
+
+/* A hint still streaming in: slightly dimmed until the final validated version lands */
+.hint.partial .stories, .hint.partial .keywords, .hint.partial .cvLeads { opacity: .8; }
+.hint.partial .hintState { color: var(--accent); }

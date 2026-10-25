@@ -64,3 +64,9 @@ test("contextTier is validated and defaults to full", () => {
   assert.equal(validateSettings({ ...good }).values.contextTier, "full");
   assert.equal(validateSettings({ ...good, contextTier: "huge" }).values.contextTier, "full");
 });
+
+test("developer mode is a boolean that survives form strings", () => {
+  assert.equal(validateSettings({ ...good, devMode: true }).values.devMode, true);
+  assert.equal(validateSettings({ ...good, devMode: "true" }).values.devMode, true);
+  assert.equal(validateSettings({ ...good }).values.devMode, false);
+});
