@@ -43,6 +43,22 @@ The status line shows first-token and total time per hint and how long after the
 speech it arrived, and Save transcript also downloads an `interview-….trace.log`. It changes
 nothing about what is sent to Claude.
 
+## Profiles: one candidate, many jobs
+
+Settings has two tabs. **Start** is one screen: keys, speech-to-text provider, live-hint model,
+and two dropdowns, **Candidate** and **Job**. **Content** holds everything the coach draws on:
+your name, CV, story bank and guided interview, the job title and description, likely questions
+and gaps, extra materials, the context table, backup, microphone test, diagnostics and past
+sessions.
+
+A candidate holds a name, CV, stories, and your own materials (LinkedIn, notes). A job holds a
+title, the job description, and its materials (cover letter, company research). The coach uses
+the active pair, so one CV and story bank serve many applications: add a job with **New**,
+paste its description, and switch back later without touching your stories. **Duplicate** copies
+an entry; **Delete** removes it. Export the active candidate or job as JSON to move it to another
+machine; importing adds it as a new entry and makes it active. An install from before profiles
+is migrated once into one candidate and one job, with nothing changed about what the coach sees.
+
 ## One screen: the call beside the coach
 
 When you share the meeting tab (step 1), its picture appears in a large pane with the coach

@@ -9,6 +9,7 @@
   body { padding: 0 clamp(14px, 3vw, 28px) 40px; max-width: 900px; margin: 0 auto; font-size: 15px; }
   h1 { font-size: 22px; margin: 18px 0 8px; }
   h2 { margin: 28px 0 8px; font-size: 17px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .pane > h2:first-of-type { border-top: none; margin-top: 16px; }
   label { display: block; color: var(--muted); font-size: 13px; margin: 10px 0 4px; }
   input, textarea, select { width: 100%; background: var(--panel); color: var(--fg); border: 1px solid #343949; border-radius: 6px; padding: 8px; font: inherit; }
   textarea { min-height: 120px; resize: vertical; }
@@ -21,16 +22,28 @@
   .res-card textarea { min-height: 90px; }
   @media (max-width: 640px) { .res-card { grid-template-columns: 1fr; } }
   details > summary { cursor: pointer; color: var(--muted); padding: 8px 0; }
+  details.block { border-top: 1px solid var(--line); margin-top: 20px; }
+  details.block > summary { font-size: 17px; color: var(--fg); font-weight: 600; padding: 14px 0 6px; }
   #ctxTable td, #ctxTable th { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--line); }
   #ctxTable td:nth-child(2), #ctxTable th:nth-child(2) { text-align: right; }
-  .actions { display: flex; gap: 8px; margin: 14px 0; align-items: center; }
+  .actions { display: flex; gap: 8px; margin: 14px 0; align-items: center; flex-wrap: wrap; }
   .session { background: var(--panel); padding: 10px; margin: 8px 0; border-radius: 6px; font-size: 14px; }
   .session pre { white-space: pre-wrap; color: var(--muted); max-height: 200px; overflow: auto; }
   small { color: var(--muted); }
   .topbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
   .topbar .status { margin-top: 0; }
-label.check { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-weight: 500; }
-label.check input { width: auto; margin: 0; }
+  label.check { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-weight: 500; }
+  label.check input { width: auto; margin: 0; }
+  /* Two tabs: Start is one screen; Content is everything the coach draws on. */
+  .tabs { display: flex; gap: 4px; margin: 14px 0 0; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 10px 16px; min-height: 0; font-size: 15px; }
+  .tab:hover { color: var(--fg); border-color: transparent; }
+  .tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+  .pane[hidden] { display: none; }
+  .pick { display: flex; gap: 6px; align-items: center; }
+  .pick select { flex: 1 1 auto; min-width: 0; }
+  .pick button { flex: none; }
+  .hero { font-size: 15px; line-height: 1.5; margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -40,6 +53,13 @@ label.check input { width: auto; margin: 0; }
   <span id="saveStatus" class="status"></span>
 </div>
 
+<nav class="tabs">
+  <button id="tab-start" class="tab on" data-tab="start">Start</button>
+  <button id="tab-content" class="tab" data-tab="content">Content: you and the job</button>
+</nav>
+
+<!-- ============================ START: one screen ============================ -->
+<section id="pane-start" class="pane">
 <h2>Keys</h2>
 <div class="row">
   <div><label>Anthropic API key</label><input id="anthropicKey" type="password" placeholder="sk-ant-..."></div>
@@ -60,7 +80,6 @@ label.check input { width: auto; margin: 0; }
   <span id="keyTest" class="status"></span>
 </div>
 <div id="keyStatus" class="status"></div>
-<small>Deepgram is the default. AssemblyAI is an alternative/backup provider — pick whichever you have a working key for; only the selected one is used for live captions.</small>
 <div class="row">
   <div><label>Live hint model <span title="Only live hints use this. Drafting stories, the gap report and the debrief always use Claude Opus 5.5: they are one-off judgement calls with nobody waiting." style="cursor:help;color:var(--muted)">(?)</span></label>
     <select id="model">
@@ -68,27 +87,43 @@ label.check input { width: auto; margin: 0; }
       <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — balanced</option>
       <option value="claude-opus-5-5">Claude Opus 5.5 — strongest judgement, slower</option>
     </select></div>
-  <div><label>How much the coach sees <span title="Lean is the smallest and fastest. Standard adds your CV. Everything also sends the extra materials below. All of it is cached after the first hint, so the difference is mostly how much the coach can draw on." style="cursor:help;color:var(--muted)">(?)</span></label>
+</div>
+
+<h2>Who is interviewing, and for what</h2>
+<div class="row">
+  <div><label>Candidate</label>
+    <div class="pick">
+      <select id="candidateSel"></select>
+      <button id="cNew" class="small" title="Start an empty candidate">New</button>
+      <button id="cDup" class="small" title="Copy this candidate, CV and stories included">Duplicate</button>
+      <button id="cDel" class="small" title="Delete this candidate and everything in it">Delete</button>
+    </div></div>
+  <div><label>Job</label>
+    <div class="pick">
+      <select id="jobSel"></select>
+      <button id="jNew" class="small" title="Start an empty job">New</button>
+      <button id="jDup" class="small" title="Copy this job and its materials">Duplicate</button>
+      <button id="jDel" class="small" title="Delete this job and its materials">Delete</button>
+    </div></div>
+</div>
+<small>One candidate (name, CV, stories, LinkedIn, notes) and one job (title, description, cover letter, company research) are active at a time; the coach uses exactly those two. Fill them in on the Content tab. A name or title typed there becomes the label here.</small>
+<div id="ctxTotal" class="status hero"></div>
+<small>Keys are stored in this extension's local storage only. Transcripts never leave this machine; only the recent transcript text is sent to Claude for hints and audio goes to the speech-to-text provider for captions.</small>
+</section>
+
+<!-- ============================ CONTENT: you and the job ============================ -->
+<section id="pane-content" class="pane" hidden>
+<h2>About you</h2>
+<div class="row">
+  <div><label>Your first name (shown in transcript and as the candidate label)</label><input id="candidateName"></div>
+  <div><label>How much the coach sees <span title="Lean is the smallest and fastest. Standard adds your CV. Everything also sends the extra materials. All of it is cached after the first hint, so the difference is mostly how much the coach can draw on." style="cursor:help;color:var(--muted)">(?)</span></label>
     <select id="contextTier">
       <option value="lean">Lean — stories and job only</option>
       <option value="standard">Standard — plus CV</option>
       <option value="full">Everything — plus extra materials</option>
     </select></div>
 </div>
-<div class="row">
-  <div><label>Your first name (shown in transcript)</label><input id="candidateName"></div>
-</div>
-<small>Keys are stored in this extension's local storage only. Transcripts never leave this machine; only the recent transcript text is sent to Claude for hints and audio goes to Deepgram for transcription.</small>
-
-<h2 id="mic">Microphone</h2>
-<div class="actions">
-  <button id="btnMic">Test microphone</button>
-  <span id="micStatus" class="status"></span>
-</div>
-<small>Chrome remembers the permission for this extension once granted here. If it was blocked, click the lock icon in the address bar and allow the microphone.</small>
-
-<h2>CV and job</h2>
-<small>The CV and job description are the ground truth for everything else: stories are drafted from the CV, likely questions from the job, and both are sent to Claude with every hint so it can point at your real experience. Upload a file or paste text; either way you get editable plain text here, which is the most token-efficient form for Claude. DOCX, ODT and text files are read locally and never leave the machine; a PDF is transcribed once by Claude (a few seconds). Old .doc files and Google Docs: download as .docx first.</small>
+<small>The CV is the ground truth: stories are drafted from it and it is sent to Claude with every hint so it can point at your real experience. Upload a file or paste text; either way you get editable plain text here, the most token-efficient form for Claude. DOCX, ODT and text files are read locally and never leave the machine; a PDF is transcribed once by Claude (a few seconds). Old .doc files and Google Docs: download as .docx first.</small>
 <label>CV</label>
 <div class="actions" style="margin-top:0">
   <button id="btnCvUpload">Upload CV (PDF, DOCX, ODT, TXT, MD)</button>
@@ -96,15 +131,48 @@ label.check input { width: auto; margin: 0; }
   <span id="cvStatus" class="status"></span>
 </div>
 <textarea id="cvText" placeholder="Upload a file above, or paste your CV here as plain text"></textarea>
-<label>Job description for the upcoming interview</label>
-<textarea id="jobDescription" placeholder="Paste the job posting"></textarea>
 <div class="actions">
   <button id="btnExtract" class="primary">Draft stories from CV with Claude</button>
   <span id="extractStatus" class="status"></span>
 </div>
 
+<h2>Story bank</h2>
+<small>These are the only things hints will point at. Edit them until they sound like you (edits save as you type). Add stories the CV doesn't show: a failure, a conflict, a time you changed your mind.</small>
+<div id="stories"></div>
+<div class="actions">
+  <button id="btnAddStory">Add a story</button>
+</div>
+
+<details class="block" id="giBox">
+  <summary>Guided story interview</summary>
+  <small>Ten standard behavioral questions. Answer each the way you would say it out loud; Claude tidies it into a story card without adding anything. Skip any you have no story for.</small>
+  <div class="story-card">
+    <div id="giProgress" class="status"></div>
+    <p id="giQuestion" style="font-size:16px"></p>
+    <textarea id="giAnswer" placeholder="Type or paste your answer in your own words"></textarea>
+    <div class="actions">
+      <button id="giSave" class="primary">Save as story</button>
+      <button id="giSkip">Skip</button>
+      <span id="giStatus" class="status"></span>
+    </div>
+  </div>
+</details>
+
+<h2>About the job</h2>
+<div class="row">
+  <div><label>Job title (the label in the Job dropdown)</label><input id="jobTitle" placeholder="e.g. Senior Accountant, Northwind"></div>
+</div>
+<label>Job description for the upcoming interview</label>
+<textarea id="jobDescription" placeholder="Paste the job posting"></textarea>
+<div class="actions">
+  <button id="btnGaps" class="primary">Find likely questions and gaps</button>
+  <span id="gapStatus" class="status"></span>
+</div>
+<small>Claude reads the job description against your story bank and lists the questions it makes likely. A ⚠ line is a gap: a probable question with no story behind it. Those are the ones to prepare; during the call a question with no matching story is flagged the same way.</small>
+<ul id="likely"></ul>
+
 <h2>More for the coach (optional)</h2>
-<small>Anything else the coach should know: a cover or motivation letter, your LinkedIn profile, company research, or plain notes (why this role, why you are moving, constraints, the interviewer's name). It is used for motivation and logistics questions and to tailor cues to this company; it never replaces your stories. Upload a file or paste text; everything here is sent to Claude with each hint, cached, and nowhere else.</small>
+<small>Anything else the coach should know: a cover or motivation letter, your LinkedIn profile, company research, or plain notes (why this role, why you are moving, constraints, the interviewer's name). Cover letters and company research are kept with the job; LinkedIn and notes with you. It is used for motivation and logistics questions and to tailor cues to this company; it never replaces your stories. Everything here is sent to Claude with each hint, cached, and nowhere else.</small>
 <details id="resBox">
   <summary id="resSummary">Add materials</summary>
   <div id="resources"></div>
@@ -116,43 +184,6 @@ label.check input { width: auto; margin: 0; }
   </div>
 </details>
 
-<h2>Guided story interview</h2>
-<small>Ten standard behavioral questions. Answer each the way you would say it out loud; Claude tidies it into a story card without adding anything. Skip any you have no story for.</small>
-<div class="story-card">
-  <div id="giProgress" class="status"></div>
-  <p id="giQuestion" style="font-size:16px"></p>
-  <textarea id="giAnswer" placeholder="Type or paste your answer in your own words"></textarea>
-  <div class="actions">
-    <button id="giSave" class="primary">Save as story</button>
-    <button id="giSkip">Skip</button>
-    <span id="giStatus" class="status"></span>
-  </div>
-</div>
-
-<h2>Story bank</h2>
-<small>These are the only things hints will point at. Edit them until they sound like you, then click Save at the bottom (Claude-generated changes save automatically). Add stories the CV doesn't show: a failure, a conflict, a time you changed your mind.</small>
-<div id="stories"></div>
-<div class="actions">
-  <button id="btnAddStory">Add a story</button>
-</div>
-
-<h2>Likely questions and gaps</h2>
-<small>Claude reads the job description against your story bank and lists the questions it makes likely. A ⚠ line is a gap: a probable question with no story behind it. Those are the ones to prepare; during the call a question with no matching story is flagged the same way.</small>
-<div class="actions">
-  <button id="btnGaps" class="primary">Find gaps for this job</button>
-  <span id="gapStatus" class="status"></span>
-</div>
-<ul id="likely"></ul>
-
-<h2>Backup</h2>
-<small>Your story bank lives only in this browser's extension storage. Export it to a JSON file before reinstalling or switching machines; import merges by title and skips duplicates.</small>
-<div class="actions">
-  <button id="btnExport">Export story bank (JSON)</button>
-  <button id="btnImport">Import story bank</button>
-  <input id="importFile" type="file" accept="application/json" style="display:none">
-  <span id="bankStatus" class="status"></span>
-</div>
-
 <h2>What the coach sees</h2>
 <small>The context sent with every live hint, by component. Sizes are estimates (about four characters per token); click Count exactly for the API's number. The whole block is cached for an hour after the first hint, so after that each hint pays only a cache read. If the total is under the cache minimum, nothing caches and every hint pays full price: add stories or a CV.</small>
 <table id="ctxTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
@@ -161,17 +192,47 @@ label.check input { width: auto; margin: 0; }
   <span id="ctxStatus" class="status"></span>
 </div>
 
-<h2>Diagnostics</h2>
-<small>One row per live hint: latency, model, tokens in and out, and how many input tokens came from the prompt cache. After the first hint of a session the cache share should be high, which is what keeps hints fast and cheap. Use this to compare models and to see whether hints are arriving in time.</small>
-<div id="diagSummary" class="status"></div>
-<table id="diagTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
-<div class="actions"><button id="btnClearDiag">Clear diagnostics</button></div>
-<label class="check"><input type="checkbox" id="devMode"> Developer mode</label>
-<small>Adds trace points to the coach window: every caption, scheduler decision, hint request, first token, partial render and error, with millisecond offsets from the session start. In developer mode they are logged to the coach window's console (right-click the window, Inspect) and Save transcript also downloads a <code>.trace.log</code> next to the transcript. Hints show first-token and total time instead of a single number. Off by default; it changes nothing about what is sent to Claude.</small>
+<h2>Backup and transfer</h2>
+<small>Everything lives only in this browser's extension storage. Export the active candidate or job as a JSON file to move it to another machine or keep a copy; importing adds it as a new entry. The story-bank export is the older format: stories only, merged by title.</small>
+<div class="actions">
+  <button id="btnExportCand">Export this candidate (JSON)</button>
+  <button id="btnExportJob">Export this job (JSON)</button>
+  <button id="btnImportProfile">Import candidate or job</button>
+  <input id="profileFile" type="file" accept="application/json" style="display:none">
+  <span id="profileStatus" class="status"></span>
+</div>
+<div class="actions">
+  <button id="btnExport" class="small">Export story bank only</button>
+  <button id="btnImport" class="small">Import story bank</button>
+  <input id="importFile" type="file" accept="application/json" style="display:none">
+  <span id="bankStatus" class="status"></span>
+</div>
 
-<h2>Past sessions</h2>
-<small>Each stopped session keeps its transcript, pacing per answer, and a debrief: which story you used, which STAR parts were present, one thing that went well and one to improve. Nothing here is uploaded anywhere; the debrief was produced from the transcript at the time you stopped.</small>
-<div id="sessions"></div>
+<details class="block" id="micBox">
+  <summary id="mic">Microphone test</summary>
+  <div class="actions">
+    <button id="btnMic">Test microphone</button>
+    <span id="micStatus" class="status"></span>
+  </div>
+  <small>Chrome remembers the permission for this extension once granted here. If it was blocked, click the lock icon in the address bar and allow the microphone.</small>
+</details>
+
+<details class="block" id="diagBox">
+  <summary>Diagnostics and developer mode</summary>
+  <small>One row per live hint: latency, model, tokens in and out, and how many input tokens came from the prompt cache. After the first hint of a session the cache share should be high, which is what keeps hints fast and cheap.</small>
+  <div id="diagSummary" class="status"></div>
+  <table id="diagTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
+  <div class="actions"><button id="btnClearDiag">Clear diagnostics</button></div>
+  <label class="check"><input type="checkbox" id="devMode"> Developer mode</label>
+  <small>Adds trace points to the coach window: every caption, scheduler decision, hint request, first token, partial render and error, with millisecond offsets from the session start. In developer mode they are logged to the coach window's console (right-click the window, Inspect) and Save transcript also downloads a <code>.trace.log</code> next to the transcript. Off by default; it changes nothing about what is sent to Claude.</small>
+</details>
+
+<details class="block" id="sessBox">
+  <summary>Past sessions</summary>
+  <small>Each stopped session keeps its transcript, pacing per answer, and a debrief: which story you used, which STAR parts were present, one thing that went well and one to improve. Nothing here is uploaded anywhere.</small>
+  <div id="sessions"></div>
+</details>
+</section>
 
 <script type="module" src="options.js"></script>
 </body>

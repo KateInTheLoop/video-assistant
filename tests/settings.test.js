@@ -70,3 +70,8 @@ test("developer mode is a boolean that survives form strings", () => {
   assert.equal(validateSettings({ ...good, devMode: "true" }).values.devMode, true);
   assert.equal(validateSettings({ ...good }).values.devMode, false);
 });
+
+test("the job title passes through like the other text fields", () => {
+  assert.equal(validateSettings({ ...good, jobTitle: "  Senior Accountant, Acme " }).values.jobTitle, "Senior Accountant, Acme");
+  assert.equal(validateSettings({ ...good }).values.jobTitle, "");
+});
