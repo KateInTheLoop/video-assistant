@@ -29,6 +29,8 @@
   small { color: var(--muted); }
   .topbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
   .topbar .status { margin-top: 0; }
+label.check { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-weight: 500; }
+label.check input { width: auto; margin: 0; }
 </style>
 </head>
 <body>
@@ -164,6 +166,8 @@
 <div id="diagSummary" class="status"></div>
 <table id="diagTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
 <div class="actions"><button id="btnClearDiag">Clear diagnostics</button></div>
+<label class="check"><input type="checkbox" id="devMode"> Developer mode</label>
+<small>Adds trace points to the coach window: every caption, scheduler decision, hint request, first token, partial render and error, with millisecond offsets from the session start. In developer mode they are logged to the coach window's console (right-click the window, Inspect) and Save transcript also downloads a <code>.trace.log</code> next to the transcript. Hints show first-token and total time instead of a single number. Off by default; it changes nothing about what is sent to Claude.</small>
 
 <h2>Past sessions</h2>
 <small>Each stopped session keeps its transcript, pacing per answer, and a debrief: which story you used, which STAR parts were present, one thing that went well and one to improve. Nothing here is uploaded anywhere; the debrief was produced from the transcript at the time you stopped.</small>

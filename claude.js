@@ -1,4 +1,5 @@
 // Raw Messages API calls. No bundler in this extension, so we use fetch directly.
+import { parsePartialJson } from "./lib/partialJson.js";
 import { buildHintRequest } from "./lib/hintRequest.js";
 import { STORY_FROM_ANSWER_SCHEMA } from "./lib/storyInterview.js";
 
@@ -72,10 +73,48 @@ export async function countHintTokens({ apiKey, body }) {
 // --- Live hint -------------------------------------------------------------
 
 // Resolves to { hint, usage, ms, model }. The caller validates `hint` and records diagnostics.
-export async function getHint({ apiKey, ...ctx }) {
+// Streamed: the card can show the question, stories and keywords about a second before the
+// answer shape and follow-ups finish. onPartial receives the JSON parsed so far (see
+// lib/partialJson.js) on every delta; onFirstToken fires once. Returns the complete hint.
+export async function getHint({ apiKey, onPartial, onFirstToken, ...ctx }) {
+  if (!apiKey) throw new Error("No Anthropic API key set (Settings).");
   const t0 = performance.now();
-  const { data, usage, model } = await call(apiKey, buildHintRequest(ctx), ["server-side-fallback-2026-07-01"], HINT_TIMEOUT_MS);
-  return { hint: data, usage, model, ms: performance.now() - t0 };
+  const body = { ...buildHintRequest(ctx), stream: true };
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), HINT_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(API, { method: "POST", headers: headers(apiKey, ["server-side-fallback-2026-07-01"]), body: JSON.stringify(body), signal: ac.signal });
+    if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", text = "", usage = {}, model = ctx.model, ttftMs = null, stop = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        if (ev.type === "message_start") { usage = { ...ev.message.usage }; model = ev.message.model || model; }
+        else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+          if (ttftMs === null) { ttftMs = performance.now() - t0; onFirstToken?.(ttftMs); }
+          text += ev.delta.text;
+          if (onPartial) { const p = parsePartialJson(text); if (p) onPartial(p); }
+        }
+        else if (ev.type === "message_delta") { usage = { ...usage, ...ev.usage }; stop = ev.delta?.stop_reason ?? stop; }
+        else if (ev.type === "error") throw new Error(`Claude stream error: ${ev.error?.message || "unknown"}`);
+      }
+    }
+    if (stop === "refusal") throw new Error("Claude declined this request.");
+    return { hint: JSON.parse(text), usage, model, ms: performance.now() - t0, ttftMs };
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error(`Claude did not answer within ${Math.round(HINT_TIMEOUT_MS / 1000)} s.`);
+    if (/^Claude/.test(e.message)) throw e;
+    throw new Error(`Network error reaching Claude: ${e.message}`);
+  } finally { clearTimeout(timer); }
 }
 
 // --- Prep: extract stories from CV ------------------------------------------

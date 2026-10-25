@@ -171,6 +171,7 @@ async function showKeyStatus() {
 async function save() {
   const form = {};
   for (const f of fields) form[f] = $(f).value;
+  form.devMode = $("devMode").checked;
   const { values, errors } = validateSettings(form);
   await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely, resources: resources.filter((r) => r.text?.trim()) });
   return errors;
@@ -190,6 +191,7 @@ async function saveAndRefresh() {
 // Every edit is saved as you go, so nothing is lost if Save is never clicked.
 // Debounced: one storage write per pause in typing, not one per keystroke.
 let autosaveTimer = null;
+document.addEventListener("change", (e) => { if (e.target.id === "devMode") document.dispatchEvent(new Event("input")); });
 document.addEventListener("input", () => {
   $("saveStatus").className = "status";
   $("saveStatus").textContent = "Saving…";
@@ -207,6 +209,7 @@ document.addEventListener("input", () => {
 async function load() {
   const s = await loadSettings();
   for (const f of fields) $(f).value = s[f] || "";
+  $("devMode").checked = !!s.devMode;
   if (![...$("model").options].some((o) => o.value === $("model").value)) $("model").value = "claude-haiku-5-5";
   if (![...$("contextTier").options].some((o) => o.value === $("contextTier").value)) $("contextTier").value = "full";
   stories = s.stories || [];
