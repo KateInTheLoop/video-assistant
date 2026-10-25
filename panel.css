@@ -118,3 +118,15 @@ button.small { font-size: 12px; padding: 5px 10px; min-height: 0; text-transform
 /* A hint still streaming in: slightly dimmed until the final validated version lands */
 .hint.partial .stories, .hint.partial .keywords, .hint.partial .cvLeads { opacity: .8; }
 .hint.partial .hintState { color: var(--accent); }
+
+/* The stage: the shared tab's picture beside the coach. One column without a call; two side
+   by side when wide; call on top, coach below when the window is narrow. Every child has
+   min-width/min-height 0 so a resize can only shrink panes, never overflow the window. */
+.stage { flex: 1 1 0; min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.stage.withCall { grid-template-columns: minmax(0, 1fr) minmax(360px, 36%); }
+.stage.withCall.stacked { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 42%) minmax(0, 1fr); }
+.coach { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.callPane { position: relative; background: #000; min-width: 0; min-height: 0; display: flex; }
+.callPane[hidden] { display: none; }
+.callPane video { flex: 1 1 0; min-width: 0; min-height: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.callNote { position: absolute; left: 10px; bottom: 10px; font-size: 12px; color: #c8ccd6; background: rgba(0, 0, 0, .55); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
