@@ -56,13 +56,15 @@ function renderProfiles() {
 
 // Switching or managing profiles: flush pending edits into the current pair first so nothing
 // typed in the last moment is lost, apply the change to a fresh copy, store, reload.
-async function withProfiles(fn) {
+function withProfiles(fn) {
   clearTimeout(autosaveTimer);
-  await save();
-  const next = fn((await loadSettings()).profiles);
-  if (!next) return;
-  await saveSettings({ profiles: next });
-  await load();
+  return serial(async () => {
+    await saveNow();
+    const next = fn((await loadSettings()).profiles);
+    if (!next) return;
+    await saveSettings({ profiles: next });
+    await load();
+  });
 }
 
 function renderStories() {
@@ -202,8 +204,8 @@ function renderInterview() {
 }
 
 // Reads the keys back from storage, so the page shows what was actually saved.
-async function showKeyStatus() {
-  const s = await loadSettings();
+async function showKeyStatus(s) {
+  s = s || await loadSettings();
   const shown = ["anthropicKey", s.sttProvider === "assemblyai" ? "assemblyaiKey" : "deepgramKey"];
   $("keyStatus").textContent = shown.map((f) => {
     const label = f === "anthropicKey" ? "Anthropic" : f === "deepgramKey" ? "Deepgram" : "AssemblyAI";
@@ -211,10 +213,22 @@ async function showKeyStatus() {
   }).join("  ·  ");
 }
 
+// Storage writes from the autosave timer and from a profile switch must never interleave:
+// a read-modify-write of `profiles` that started before the switch would write the old
+// active pair back and silently undo the switch. One promise chain serialises them all.
+let storageChain = Promise.resolve();
+function serial(fn) {
+  const run = storageChain.then(fn, fn);
+  storageChain = run.catch(() => {});
+  return run;
+}
+
 // Writes the fields that pass validation and returns errors for the rest.
 // A field that fails keeps whatever was stored before. Flat content fields land in the
-// active candidate and job (storage.js routes them).
-async function save() {
+// active candidate and job (storage.js routes them). Always call save(); saveNow() is for
+// code already running inside serial().
+const save = () => serial(saveNow);
+async function saveNow() {
   const form = {};
   for (const f of fields) form[f] = $(f).value;
   form.devMode = $("devMode").checked;
@@ -247,9 +261,10 @@ document.addEventListener("input", () => {
     const st = $("saveStatus");
     st.className = problems.length ? "status error" : "status";
     st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
-    showKeyStatus();
+    const s = await loadSettings(); // one read: key status, and a new name or title relabels the dropdowns
+    showKeyStatus(s);
     renderContext();
-    profiles = (await loadSettings()).profiles; // a new name or title relabels the dropdowns
+    profiles = s.profiles;
     renderProfiles();
   }, 600);
 });
@@ -264,7 +279,7 @@ async function load() {
   stories = s.stories || [];
   resources = s.resources || [];
   likely = s.likelyQuestions || [];
-  renderProfiles(); renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus();
+  renderProfiles(); renderStories(); renderLikely(); renderSessions(); renderDiag(); renderInterview(); showKeyStatus(s);
   renderResources(); renderContext();
 }
 
