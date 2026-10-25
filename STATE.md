@@ -24,11 +24,28 @@
 | M4.3 | done | lib/bank.js export/import/merge with round-trip tests; Settings → Backup buttons |
 | M5.1 | done | claude.debrief (per-question story used, STAR flags, went well, improve; overall + top_fix) runs after Stop, stored on session, rendered in Settings → Past sessions |
 | M5.2 | done | lib/pace.js answerStats/paceSummary (long >120s, short <20s, wpm), 3 tests; shown per session and per question |
-| M6.1 | blocked | needs human: load extension in Chrome, run a Meet test call |
+| M6.1 | done | verified in three real Meet calls 2026-10-24 (see Human feedback) |
 | M6.2 | done | docs/first-run.md: install, prep, interview day, after, troubleshooting table; screenshot placeholders |
+| R0.1 | done | stage: call picture beside the coach, hide/show, full screen (v0.2.0) |
+| R0.2 | blocked | needs human: tab video on Linux/Wayland, resize/full-screen never crashes |
+| R1.1 | todo | lib/profiles.js: candidates/jobs model, flatten, migrate |
+| R1.2 | todo | storage.js reads/writes the active profiles; one-time migration |
+| R1.3 | todo | Settings tab Start: keys, provider, model, Candidate/Job dropdowns |
+| R1.4 | todo | Settings tab Content: About you / About the job |
+| R1.5 | todo | export/import one candidate or job as JSON |
+| R2.1 | todo | commit lib/parseAiJobSearch.js with synthetic-fixture tests |
+| R2.2 | todo | Import profile → new candidate (stories, CV text, materials) |
+| R2.3 | todo | import preview + merge into existing candidate |
+| R3.1 | todo | Compare providers: both STT on the same audio, secondary logs only |
+| R3.2 | todo | lib/sttCompare.js: latency, word diff, cost/hour |
+| R3.3 | todo | Diagnostics table; user picks default |
+| R4.1 | todo | practice: Claude asks, browser speech speaks |
+| R4.2 | todo | practice uses the live hint pipeline |
+| R4.3 | todo | practice debrief stored as a session |
+| W1 | todo | Windows system audio (needs Windows) |
 
 ## Needs human
-- M6.1: all code milestones are done. Load the extension unpacked (chrome://extensions → Developer mode → Load unpacked → this folder), add Anthropic + Deepgram keys in Settings, run a short Meet test call, then paste console errors/observations under "Human feedback". Check Settings → Diagnostics for non-zero cache reads on the second hint (M3.1 live confirmation).
+- R0.2: reload the extension (v0.2.0), share the meeting tab, confirm the call's picture appears beside the coach on this Linux box (Wayland may refuse a picture), then resize the window and use Full screen; report any crash or layout break under "Human feedback".
 
 ## Human feedback
 - 2026-10-25 (session 2, stage): user chose a single full-screen window over a floating overlay. The tab share already carried a video track we were stopping; it is now the picture of the call, shown in a grid beside the coach (lib/callView.js decides tracks/visibility/layout, 3 tests). Side by side when wide, stacked under 900 px, Hide call toggle, Full screen via the Fullscreen API; muted video, selfBrowserSurface:"exclude" so the mirror cannot show itself; detach on Stop or when the user ends the share. Window opens at 1280x820. Version 0.2.0. Needs human: confirm tab video capture on Linux/Wayland and that resizing never crashes. 98 tests green.
