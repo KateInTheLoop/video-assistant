@@ -16,8 +16,8 @@ chrome.action.onClicked.addListener(async () => {
   const win = await chrome.windows.create({
     url: chrome.runtime.getURL("panel.html"),
     type: "popup",
-    width: 520,
-    height: 900,
+    width: 1280,  // room for the call's picture beside the coach; "Full screen" in the window fills the monitor
+    height: 820,
   });
   await chrome.storage.session.set({ coachWindowId: win.id });
 });
