@@ -11,6 +11,12 @@ prepared answer** through its Material type dropdown without losing its text. En
 are available in every context tier. Highest priority wins among summaries; this-job scope
 wins ties, then the first saved entry. Off summaries are excluded.
 
+Guidance cards stay visible at the top of Content. Each card names its purpose, scope and
+inclusion status; the active resume answer is marked **Selected for resume questions**.
+Use **Start → Review interview guidance** to jump there and preview the exact selected answer.
+The preview reflects your current settings. Check the saving status before starting a new
+interview; a running interview keeps the context it started with.
+
 "Walk me through your resume" or "Tell me about yourself" displays the selected answer
 immediately, exactly as saved, without a Claude rewrite. The complete CV timeline is available
 under **CV timeline and supporting roles**. Without a prepared answer, the walkthrough shows

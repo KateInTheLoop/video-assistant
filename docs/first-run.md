@@ -22,16 +22,22 @@ If the card shows **Errors**, click it and paste the text into `STATE.md` → "H
 2. Click **Settings** in the window header.
 3. Paste the **Anthropic API key** and the **Deepgram API key**. Deepgram: sign up at deepgram.com, create a key, free credit included.
 4. Click **Test microphone** and allow the mic when Chrome asks. This is the one permission prompt.
-5. Click **Upload CV** and pick your PDF, DOCX, ODT, TXT or MD file (or paste the text). A PDF takes a few seconds while Claude transcribes it; other formats are instant and never leave the machine. From Google Docs or an old .doc: File → Download → Microsoft Word (.docx) first. Check the text reads right, then paste the **job description** and click **Draft stories from CV**.
-6. Edit each story until it sounds like you. Delete anything that is not true.
-7. Answer the **Guided story interview** questions you have real stories for. Skip the rest.
-7b. Under **Interview guidance and materials**, click **Add interview notes**. Name the technical topics expected, skills to highlight and links between your work and this role. Notes default to **5 — Must focus** and **This job**. Use the 0–5 priority slider for every material; 0 turns it Off. Choose **Candidate — all jobs** for reusable notes. Notes remain included in every context tier; other materials require Everything. Inclusion/truncation status appears below each text field.
-8. Click **Find gaps for this job**. Add stories for any ⚠ lines you can.
-9. Click **Save**. Click **Export story bank** and keep the file.
+5. Select the candidate and job on Start, then open **Content**. **Interview guidance and materials** is at the top and stays visible. Use **Add interview notes** for expected topics, skills to highlight and role connections. Use **Add resume summary** for wording you want shown verbatim. Both default to **5 — Must focus** and **This job**. Choose **Candidate — all jobs** for reusable guidance; 0 turns an item Off. Card headings, status badges and the **Material type** field show how each item is used.
+6. Click **Upload CV** and pick your PDF, DOCX, ODT, TXT or MD file (or paste the text). A PDF takes a few seconds while Claude transcribes it; other formats are instant and never leave the machine. From Google Docs or an old .doc: File → Download → Microsoft Word (.docx) first. Check the text reads right, then paste the **job description** and click **Draft stories from CV**. Your notes can now guide preparation too.
+7. Edit each story until it sounds like you. Delete anything that is not true.
+8. Answer the **Guided story interview** questions you have real stories for. Skip the rest.
+9. Click **Find likely questions and gaps**. Add stories for any ⚠ lines you can.
+10. Click **Save settings**. Export both the candidate and the job as JSON to keep the CV, stories, notes and prepared answer; job-scoped guidance travels with the job export.
 
 _Screenshot placeholder: Settings with story bank and gap list._
 
 ## 3. Interview day
+
+In Settings, check the candidate and job, then use **Start → Review interview guidance**.
+The selected answer is marked **Selected for resume questions**; open its preview to check
+the exact wording. This reflects the current settings; confirm they are saved before starting.
+Edits made during a running interview apply to the next one.
+
 1. Join the call in a Chrome **tab** (Meet, Zoom web or Teams web). Not the desktop app.
 2. In the coach window click **1. Capture call audio**.
    In Chrome's picker choose **Chrome Tab**, select the meeting tab, tick **Share tab audio**, click Share.
