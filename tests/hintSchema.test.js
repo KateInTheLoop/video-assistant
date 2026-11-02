@@ -1,10 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateHint, HINT_SCHEMA, isKeyword, isShapePrompt, isFollowUpQuestion } from "../lib/hintSchema.js";
+import { hasStoryGap, provisionalHint } from "../lib/hintSchema.js";
 
 const bank = ["Billing migration", "Team lead at Acme"];
 const good = { is_question: true, follow_up: false, question_summary: "Time you handled conflict", question_type: "behavioral",
   stories: [{ title: "Team lead at Acme", cue: "the designer disagreement" }], keywords: ["listen first", "data", "compromise"], watch_out: "" };
+
+test("technical explanations survive validation without personal stories", () => {
+  const notes = ["Debit is the left side; credit is the right side.", "Debits increase assets and expenses; credits increase liabilities, equity and revenue.", "Buying equipment for $100 cash: debit equipment $100; credit cash $100."];
+  const input = { ...good, question_type: "technical", stories: [], technical_points: notes };
+  const { hint } = validateHint(input, []);
+  assert.deepEqual(hint.technical_points, notes);
+  assert.equal(hasStoryGap(hint), false);
+  assert.deepEqual(provisionalHint(input, []).technical_points, notes);
+  assert.equal(hasStoryGap({ ...hint, question_type: "behavioral" }), true);
+  assert.deepEqual(validateHint({ ...input, question_type: "behavioral" }).hint.technical_points, []);
+  const filtered = validateHint({ ...input, technical_points: ["I led the ledger migration", "x ".repeat(40), ...Array(8).fill(notes[0])] });
+  assert.equal(filtered.hint.technical_points.length, 5);
+  assert.ok(filtered.errors.length);
+});
 
 test("accepts a well-formed hint", () => {
   const r = validateHint(good, bank);

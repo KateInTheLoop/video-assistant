@@ -1,7 +1,7 @@
 # Interview Coach (Chrome extension)
 
 Live captions for a video interview plus structure hints grounded in the candidate's own CV and stories.
-Not an answer generator: hints are capped at a few keywords and may only point at stories you wrote yourself (with the beats of those stories, and pointers into your own CV when no story fits).
+Experience questions receive short cues grounded in your own stories and CV. Technical knowledge questions receive concise factual explanations and examples from the model's general knowledge, calibrated to the CV and job. They work without a matching story, including with an empty story bank.
 The optional "answer shape" panel names what a strong answer covers and the follow-ups to expect; it never writes words to read aloud.
 
 ## Install (developer mode)
@@ -32,7 +32,7 @@ Whatever the source, the CV becomes compact plain text in Settings, which you ca
 ## Notes
 - Tab-audio capture works on every OS. Whole-system audio capture only works on Windows and ChromeOS, so tab capture is the default.
 - Speech to text is Deepgram Nova-3 by default (robust to accents, ~300 ms); AssemblyAI Universal-Streaming is available as an alternative/backup provider, selectable in Settings. Claude Opus 5.5 produces the hints with a structured JSON schema.
-- Nothing is uploaded except the recent transcript text (to Anthropic) and the audio (to Deepgram).
+- Audio goes to the selected speech provider (Deepgram or AssemblyAI). Anthropic receives recent transcript text and the context selected by your tier for live hints; the full transcript and story titles for the debrief; and the CV, job description, typed answer or PDF needed for preparation. DOCX, ODT and text files are parsed locally. Keys and saved transcripts remain in local extension storage.
 
 ## Developer mode
 

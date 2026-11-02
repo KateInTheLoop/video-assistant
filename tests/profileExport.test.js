@@ -28,7 +28,7 @@ test("a malformed file cannot brick the app: wrong value types are coerced or re
   const r = importProfile(bad);
   assert.equal(r.data.name, "7");
   assert.equal(r.data.cvText, "");
-  assert.deepEqual(r.data.stories, [{ title: "ok", situation: "1" }], "story fields coerced, title-less story dropped");
+  assert.deepEqual(r.data.stories, [{ title: "ok", situation: "1", action: "", result: "", tags: "" }], "story fields coerced, missing text defaulted, title-less story dropped");
   assert.deepEqual(r.data.resources, [{ kind: "other", text: "fine" }]);
   assert.throws(() => importProfile(JSON.stringify({ kind: "candidate", data: { stories: "none" } })), /"stories" must be a list/);
   assert.throws(() => importProfile(JSON.stringify({ kind: "job", data: { likelyQuestions: {} } })), /"likelyQuestions" must be a list/);

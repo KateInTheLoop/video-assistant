@@ -1,4 +1,4 @@
-import { loadSettings, appendTranscript, updateSession } from "./storage.js";
+import { loadSettings, appendTranscript, updateSession, saveSessionDraft, recoverSessionDrafts } from "./storage.js";
 import { SttStream } from "./stt.js";
 import { AssemblyAiStream } from "./stt-assemblyai.js";
 import { WebSpeechStream } from "./webspeech.js";
@@ -11,7 +11,7 @@ import { answerStats, paceSummary } from "./lib/pace.js";
 import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
 import { createTrace, formatTrace } from "./lib/trace.js";
 import { callTracks, showCallPane, stageLayout } from "./lib/callView.js";
-import { provisionalHint } from "./lib/hintSchema.js";
+import { provisionalHint, hasStoryGap } from "./lib/hintSchema.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -23,6 +23,7 @@ const ui = {
   hintState: $("hintState"), cvLeads: $("cvLeads"), hintActions: $("hintActions"), questions: $("questions"), save: $("btnSave"),
   bankWarn: $("bankWarn"), gapNotice: $("gapNotice"),
   shapeBox: $("shapeBox"), answerShape: $("answerShape"), followUps: $("followUps"),
+  technicalNotes: $("technicalNotes"), technicalPoints: $("technicalPoints"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -31,6 +32,9 @@ let selectedId = null;
 let qSeq = 0;
 
 let settings;
+let nextSettings;
+let sessionId = null;
+let transcriptName = "";
 let streams = { interviewer: null, candidate: null };
 let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
@@ -71,7 +75,7 @@ function lineEl(speaker, text, isInterim) {
   el.className = `line ${speaker}${isInterim ? " interim" : ""}`;
   const who = document.createElement("span");
   who.className = "who";
-  who.textContent = speaker === "interviewer" ? "Interviewer" : (settings.candidateName || "You");
+  who.textContent = speaker === "interviewer" ? "Interviewer" : (transcriptName || settings.candidateName || "You");
   el.appendChild(who);
   el.appendChild(document.createTextNode(text));
   return el;
@@ -90,6 +94,7 @@ function onFinal({ speaker, text, speechFinal }) {
   trace.mark("stt.final", { speaker, chars: text.length, speechFinal: !!speechFinal });
   interim[speaker] = null;
   mergeFinal(transcript, { speaker, text });
+  checkpointTranscript();
   renderTranscript();
 
   if (speaker === "interviewer") {
@@ -220,6 +225,7 @@ function clearHintCard() {
   ui.question.textContent = "Waiting for a question\u2026";
   ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
   ui.gapNotice.hidden = true; ui.shapeBox.hidden = true; ui.cvLeads.hidden = true;
+  ui.technicalNotes.hidden = true; ui.technicalPoints.innerHTML = "";
 }
 
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
@@ -263,7 +269,7 @@ function renderQueue() {
 
     const text = document.createElement("span");
     text.className = "qText";
-    const gap = q.hint.is_question && !q.hint.stories.length;
+    const gap = hasStoryGap(q.hint);
     text.textContent = `${gap ? "\u26a0 " : ""}${q.hint.question_summary || "(question)"}`;
     if (gap) text.title = "No story in your bank fits this question";
 
@@ -320,6 +326,12 @@ function renderHint(h, { partial = false } = {}) {
   ui.hintState.className = "hintState";
   ui.qtype.textContent = h.follow_up ? `${h.question_type} \u00b7 follow-up, same story` : h.question_type;
   ui.question.textContent = h.question_summary;
+  ui.technicalPoints.innerHTML = "";
+  for (const point of h.technical_points || []) {
+    const li = document.createElement("li"); li.textContent = point;
+    ui.technicalPoints.appendChild(li);
+  }
+  ui.technicalNotes.hidden = h.question_type !== "technical" || !h.technical_points?.length;
   ui.stories.innerHTML = "";
   for (const s of h.stories) {
     const el = document.createElement("div");
@@ -327,6 +339,17 @@ function renderHint(h, { partial = false } = {}) {
     const b = document.createElement("b"); b.textContent = s.title;
     const span = document.createElement("span"); span.textContent = s.cue;
     el.append(b, span);
+    const q = !partial && questions.find((item) => item.id === selectedId && item.hint === h);
+    if (q) {
+      const used = document.createElement("button"); used.className = "small";
+      used.textContent = q.usedStories?.includes(s.title) ? "Used ✓ — undo" : "Used this story";
+      used.onclick = () => {
+        const titles = new Set(q.usedStories || []);
+        if (titles.has(s.title)) titles.delete(s.title); else titles.add(s.title);
+        q.usedStories = [...titles]; renderHint(h);
+      };
+      el.appendChild(used);
+    }
     const beats = s.beats?.length ? s.beats : [];
     if (beats.length) {
       const ul = document.createElement("ul"); ul.className = "beats";
@@ -352,7 +375,7 @@ function renderHint(h, { partial = false } = {}) {
 
   // A question with no story behind it is the thing the candidate most needs to know,
   // both live (improvise honestly, do not stall) and afterwards (a gap to prepare).
-  const noStory = h.is_question && !h.stories.length;
+  const noStory = !partial && hasStoryGap(h);
   ui.gapNotice.hidden = !noStory;
   if (noStory) {
     const leads = h.cv_leads?.length;
@@ -384,7 +407,7 @@ function renderHint(h, { partial = false } = {}) {
   const leads = h.cv_leads || [];
   if (leads.length) {
     const lab = document.createElement("span"); lab.className = "leadLabel";
-    lab.textContent = h.stories.length ? "Also in your CV:" : "From your CV (no story yet):";
+    lab.textContent = h.question_type === "technical" ? "Relevant CV context:" : h.stories.length ? "Also in your CV:" : "From your CV (no story yet):";
     ui.cvLeads.appendChild(lab);
     for (const l of leads) {
       const el = document.createElement("span"); el.className = "kw lead"; el.textContent = l;
@@ -426,7 +449,19 @@ function setHintState(text, isError = false) {
 
 // Questions that had no story behind them: the candidate's prep list for next time.
 function gapQuestions() {
-  return questions.filter((q) => q.hint.is_question && !q.hint.stories.length).map((q) => q.hint.question_summary);
+  return questions.filter((q) => hasStoryGap(q.hint)).map((q) => q.hint.question_summary);
+}
+
+function sessionMetadata() {
+  return { id: sessionId, start: sessionStart,
+    candidateId: settings.profiles?.activeCandidate ?? null, candidateName: settings.candidateName || "",
+    jobId: settings.profiles?.activeJob ?? null, jobTitle: settings.jobTitle || "" };
+}
+
+function checkpointTranscript() {
+  if (!sessionId || sessionStart === null || !transcript.length) return;
+  saveSessionDraft({ ...sessionMetadata(), end: Date.now(), lines: transcript.map((l) => ({ ...l })) })
+    .catch((e) => setStatus(`Could not save recovery checkpoint: ${e.message}. Use Save transcript.`, true));
 }
 
 function reportGaps() {
@@ -439,7 +474,7 @@ function reportGaps() {
 function saveTranscript() {
   if (!transcript.length) return;
   const header = `Interview transcript\n${new Date(sessionStart || Date.now()).toLocaleString()}\n\n`;
-  const body = transcript.map((l) => `${l.speaker === "interviewer" ? "Interviewer" : (settings.candidateName || "You")}: ${l.text}`).join("\n");
+  const body = transcript.map((l) => `${l.speaker === "interviewer" ? "Interviewer" : (transcriptName || settings.candidateName || "You")}: ${l.text}`).join("\n");
   const gaps = gapQuestions();
   const gapBlock = gaps.length
     ? `\n--- Questions with no matching story (add these to your bank) ---\n${gaps.map((g) => `- ${g}`).join("\n")}\n`
@@ -482,6 +517,9 @@ function stopTalkClock() {
 // First capture of a new session: forget the previous interview so it is not appended to.
 function beginSessionIfNeeded() {
   if (sessionStart !== null) return;
+  settings = structuredClone(nextSettings || settings);
+  transcriptName = settings.candidateName || "";
+  sessionId = crypto.randomUUID();
   sessionVersion++;
   sessionStart = Date.now();
   trace.reset();
@@ -631,6 +669,7 @@ async function captureSource(speaker, acquire, createStt) {
 }
 
 async function stopAll() {
+  const metadata = sessionMetadata();
   const start = sessionStart;
   const lines = transcript.map((line) => ({ ...line }));
   const stoppedSettings = settings;
@@ -652,8 +691,9 @@ async function stopAll() {
   ui.tab.disabled = false; ui.mic.disabled = false;
   if (lines.length && start !== null) {
     const end = Date.now();
-    const session = { id: crypto.randomUUID(), start, end, lines, pace: answerStats(lines, end), paceSummary: paceSummary(answerStats(lines, end)) };
-    await appendTranscript(session);
+    const session = { ...metadata, start, end, lines, pace: answerStats(lines, end), paceSummary: paceSummary(answerStats(lines, end)) };
+    try { await appendTranscript(session); }
+    catch (e) { setStatus(`Could not save transcript: ${e.message}. Use Save transcript to download it.`, true); return; }
     if (version === sessionVersion) setStatus("Stopped. Transcript saved. Writing debrief…");
     try {
       session.debrief = await debrief({ apiKey: stoppedSettings.anthropicKey, model: stoppedSettings.model, lines, stories: stoppedSettings.stories });
@@ -667,13 +707,24 @@ async function stopAll() {
 // --- Boot ------------------------------------------------------------------
 
 (async () => {
-  settings = await loadSettings();
+  settings = nextSettings = await loadSettings();
   if (!settings.anthropicKey || !sttKey()) setStatus("Add your API keys in Settings before starting.", true);
   renderBankWarning();
-  chrome.storage.onChanged.addListener(async () => {
-    settings = await loadSettings(); renderBankWarning();
-    if (sessionStart !== null) prewarm("settings changed"); // the prefix changed: seed the new one before the next question
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== "local" || !Object.keys(changes).some((key) => key === "profiles" || ["anthropicKey", "deepgramKey", "assemblyaiKey", "sttProvider", "model", "contextTier", "devMode"].includes(key))) return;
+    nextSettings = await loadSettings();
+    // The active interview retains its candidate, job, provider and prompt until Stop.
+    if (sessionStart === null) { settings = nextSettings; renderBankWarning(); }
   });
+  try {
+    const recovered = await recoverSessionDrafts();
+    const last = recovered.at(-1);
+    if (last) {
+      transcript = last.lines; transcriptName = last.candidateName || "";
+      renderTranscript();
+      setStatus("Recovered an interrupted interview. Its transcript is saved in Settings → Past sessions; Save transcript downloads it.");
+    }
+  } catch (e) { setStatus(`Could not recover the previous interview: ${e.message}`, true); }
   // A session that sits quiet for most of an hour (late start, long intro) would lose the cache.
   setInterval(() => { if (sessionStart !== null && lastCacheTouch && Date.now() - lastCacheTouch > CACHE_REFRESH_MS) prewarm("cache refresh"); }, 60 * 1000);
   ui.tab.onclick = captureTab;

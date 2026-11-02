@@ -1,4 +1,4 @@
-# First run (Linux, Chrome)
+# First run (Windows or Linux, Chrome)
 
 Fifteen minutes the first time, two minutes on interview day.
 
@@ -7,6 +7,11 @@ Fifteen minutes the first time, two minutes on interview day.
 2. Toggle **Developer mode** (top right).
 3. **Load unpacked** → choose the `interview-coach` folder.
 4. Pin the extension: puzzle icon in the toolbar → pin **Interview Coach**.
+
+On Windows, download the release ZIP and use **Extract All** first. Select the extracted
+folder containing `manifest.json` and keep that folder in place after installation.
+No Node.js or build tools are needed. If Windows blocks the microphone, enable Chrome
+under Windows Settings → Privacy & security → Microphone → desktop app access.
 
 _Screenshot placeholder: extensions page with the card loaded, no errors._
 
@@ -39,7 +44,8 @@ _Screenshot placeholder: Chrome share picker with Chrome Tab selected and the au
 Wear headphones. Without them the mic hears the interviewer through your speakers and their words show up as yours.
 
 ## 4. During the call
-- The big line is the question, restated. Below it: up to two of your stories with a cue, and up to four keywords.
+- The big line is the question, restated. Technical questions show factual **Technical notes**, including explanations and small examples. Experience questions show up to three of your stories with cues and up to six keywords.
+- **Used this story** confirms that you actually drew on a suggested story. Unconfirmed suggestions do not count as used.
 - Keywords are prompts for your own words, never a script. Look at them, then look back at the camera.
 - The talk timer warns at 90 seconds and again at two minutes.
 - "follow-up, same story" means stay on the story you were telling.
@@ -59,4 +65,10 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
 | Hint card never updates | Open the coach window's DevTools (right click → Inspect) and look for "hint validator" warnings |
 | Nothing works, no error | Reload the extension on `chrome://extensions` and reopen the coach window |
 
-Nothing leaves this computer except: audio to Deepgram for transcription, and the recent transcript lines plus your story bank to Anthropic for hints and the debrief.
+Audio is sent to the selected speech provider. Anthropic receives recent transcript text and
+the selected candidate/job context for live hints, and the full transcript plus story titles
+for the debrief when you stop. Preparation sends the CV, job description, typed answer or
+PDF required for that operation. DOCX, ODT and text files are parsed locally. Final transcript
+lines are checkpointed locally; after an interrupted call, reopening the coach recovers them
+into Past sessions without uploading a debrief. The active interview keeps its starting
+candidate/job context; profile changes apply to the next interview.
