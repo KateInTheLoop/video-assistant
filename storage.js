@@ -65,14 +65,28 @@ export async function saveSettings(partial) {
 
 // --- Sessions (transcript, pace, debrief per stopped call); the last 20 are kept ------------
 
-export async function appendTranscript(session) {
-  const { sessions = [] } = await chrome.storage.local.get("sessions");
-  sessions.push(session);
-  await chrome.storage.local.set({ sessions: sessions.slice(-20) });
+let sessionWrites = Promise.resolve();
+function writeSession(fn) {
+  const run = sessionWrites.then(fn, fn);
+  sessionWrites = run.catch(() => {});
+  return run;
 }
 
-export async function updateLastSession(session) {
-  const { sessions = [] } = await chrome.storage.local.get("sessions");
-  if (sessions.length) sessions[sessions.length - 1] = session;
-  await chrome.storage.local.set({ sessions });
+export function appendTranscript(session) {
+  return writeSession(async () => {
+    const { sessions = [] } = await chrome.storage.local.get("sessions");
+    sessions.push(session);
+    await chrome.storage.local.set({ sessions: sessions.slice(-20) });
+  });
+}
+
+export function updateSession(session) {
+  return writeSession(async () => {
+    const { sessions = [] } = await chrome.storage.local.get("sessions");
+    const index = sessions.findIndex((s) => s.id === session.id);
+    // A session removed by retention must never overwrite a newer one or be resurrected.
+    if (!session.id || index < 0) return;
+    sessions[index] = session;
+    await chrome.storage.local.set({ sessions });
+  });
 }
