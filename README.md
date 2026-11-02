@@ -23,7 +23,22 @@ model finishes its overview. An unrecognized CV layout shows the source text for
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
 
 ## What the coach knows
-Every live hint carries, in a cached prefix: your story bank, the job description, your CV, and any extra materials you add (cover letter, LinkedIn profile, company research, notes). A "How much the coach sees" dropdown in Settings picks Lean (stories + job), Standard (+ CV) or Everything (+ materials); Settings → "What the coach sees" shows the size of each part and whether it is above the cache minimum. The coach is also told what has been asked so far and which stories were used, so it steers you away from repeating one. Live hints default to Claude Haiku 5.5 (fastest, cheapest); drafting stories, the gap report and the debrief always use Claude Opus 5.5.
+Each live hint receives your enabled coach notes plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" shows the size of each part and whether it is above the cache minimum. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5.
+
+In **Interview guidance and materials**, use **Add interview notes** to tell the coach what
+you expect: likely technical domains, skills worth emphasizing, and links between your work
+and this job. For example: "Expect inventory costing questions; emphasize reconciliations;
+connect system-testing experience to this role's migration work." Notes default to **5 — Must
+focus**, other materials to **3 — Relevant**. The 0–5 slider adjusts emphasis; **0 — Off** excludes
+an item entirely. Cards show the order and whether text is included, shortened or omitted.
+Higher priorities receive space first, so background documents do not crowd out important notes.
+
+New notes apply to **This job**. Choose **Candidate — all jobs** for reusable guidance.
+Existing notes keep their original scope and receive the highest default priority. Notes
+remain included in Lean and Standard unless turned Off; other materials require Everything.
+The same ranked guidance goes to story drafting, guided-answer preparation and likely-question
+generation. The model is instructed to apply it across technical notes, career overviews,
+story choices and follow-ups while answering the actual question and keeping facts grounded.
 
 ## CV formats
 | Format | How it is read | Leaves the machine? |
@@ -64,8 +79,8 @@ your name, CV, story bank and guided interview, the job title and description, l
 and gaps, extra materials, the context table, backup, microphone test, diagnostics and past
 sessions.
 
-A candidate holds a name, CV, stories, and your own materials (LinkedIn, notes). A job holds a
-title, the job description, and its materials (cover letter, company research). The coach uses
+A candidate holds a name, CV, stories, and materials scoped to that candidate. A job holds a
+title, the job description, and materials scoped to that job, including new interview notes. The coach uses
 the active pair, so one CV and story bank serve many applications: add a job with **New**,
 paste its description, and switch back later without touching your stories. **Duplicate** copies
 an entry; **Delete** removes it. Export the active candidate or job as JSON to move it to another

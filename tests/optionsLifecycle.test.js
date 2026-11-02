@@ -71,3 +71,28 @@ test("switching clears the previous candidate's unsaved guided answer", async ()
   assert.equal(h.$("giAnswer").value, "");
   assert.equal(h.stored().activeCandidate, "c-2");
 });
+
+test("material controls save priority and scope, and job notes do not leak across jobs", async () => {
+  const h = await settingsHarness();
+  const find = (node, predicate) => predicate(node) ? node : (node.children || []).map(child => find(child, predicate)).find(Boolean);
+  h.$("btnAddRes").onclick();
+  let card = h.$("resources").children[0];
+  let slider = find(card, node => node.type === "range");
+  assert.equal(slider.value, "5");
+  assert.equal(find(card, node => node.getAttribute?.("aria-label") === "Applies to").value, "job");
+  const notes = find(card, node => node.placeholder?.startsWith("Expected topics"));
+  notes.value = "Expect inventory questions; emphasize reconciliation experience."; notes.oninput();
+  slider.value = "4"; slider.oninput(); slider.onchange();
+  await h.$("btnSave").onclick();
+  assert.equal(h.stored().jobs["j-1"].resources[0].priority, 4);
+  assert.equal(h.stored().candidates["c-1"].resources.length, 0);
+  h.$("jobSel").value = "j-2"; await h.$("jobSel").onchange();
+  assert.equal(h.$("resources").children.length, 0);
+  h.$("jobSel").value = "j-1"; await h.$("jobSel").onchange();
+  card = h.$("resources").children[0];
+  const scope = find(card, node => node.getAttribute?.("aria-label") === "Applies to");
+  scope.value = "candidate"; scope.onchange();
+  await h.$("btnSave").onclick();
+  assert.equal(h.stored().candidates["c-1"].resources[0].scope, "candidate");
+  assert.equal(h.stored().jobs["j-1"].resources.length, 0);
+});
