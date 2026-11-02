@@ -129,10 +129,10 @@ Each tagged version has a ready `.zip` on the repo's Releases page.
 - `npm run build` — writes `dist/interview-coach-v<version>.zip`.
 
 CI runs the scan, tests and a build on every push and PR. To cut a release, bump `version` in
-`manifest.json`, commit, then push a matching tag:
+`manifest.json` and `package.json`, commit, then push a matching tag:
 
 ```
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 The Release workflow checks the tag matches the manifest, runs the scan and tests, builds the
