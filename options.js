@@ -1,7 +1,7 @@
 import { loadSettings, saveSettings } from "./storage.js";
 import { extractStories, storyFromAnswer, gapReport, cvTextFromPdf } from "./claude.js";
 import { cvTextFromFile } from "./lib/cvFile.js";
-import { RESOURCE_KINDS } from "./lib/context.js";
+import { RESOURCE_KINDS, MATERIAL_PRIORITIES, materialPriority, materialOwner, rankedMaterials, materialPlan, normalizeMaterial, applyTier } from "./lib/context.js";
 import { buildHintRequest, contextReport } from "./lib/hintRequest.js";
 import { countHintTokens } from "./claude.js";
 import { exportBank, importBank, mergeStories, normalizeLikely, exportProfile, importProfile } from "./lib/bank.js";
@@ -125,32 +125,80 @@ function renderStories() {
   });
 }
 
+const resourceStatuses = new Map();
+function renderMaterialStatus() {
+  const eligible = applyTier({ resources }, $("contextTier").value).resources;
+  const plan = materialPlan(eligible), statuses = new Map(plan.entries.map(e => [e.resource, e]));
+  for (const [resource, label] of resourceStatuses) {
+    const entry = statuses.get(resource);
+    label.textContent = !resource.text?.trim() ? "Empty — add guidance or source text"
+      : !materialPriority(resource) ? "Off — excluded from AI context"
+      : !entry ? "Excluded by context tier — choose Everything to include this material"
+      : entry.status === "truncated" ? `Partially included (${entry.sentChars.toLocaleString()} characters) — shorten this material or lower other priorities`
+      : entry.status === "omitted" ? "Not included — higher-priority materials fill the context budget"
+      : "Included in AI context";
+  }
+  const active = eligible.filter(r => r.text?.trim()).length;
+  $("resBudget").textContent = `${active} active material${active === 1 ? "" : "s"}. Coach notes are included in every context tier unless set to Off. Higher priorities are included first.`
+    + (plan.truncated ? " Some material is shortened or omitted; see the status on each card." : "");
+}
+
 function renderResources() {
   const box = $("resources");
   box.innerHTML = "";
-  resources.forEach((r, i) => {
+  resourceStatuses.clear();
+  rankedMaterials(resources).forEach(({ resource: r, index: i }, rank) => {
     const card = document.createElement("div");
     card.className = "res-card";
+    card.dataset.priority = String(materialPriority(r));
+    const controls = document.createElement("div"); controls.className = "res-controls";
+    const kindLabel = document.createElement("label"); kindLabel.textContent = `${rank + 1}. Material type`;
     const sel = document.createElement("select");
     for (const k of RESOURCE_KINDS) { const o = document.createElement("option"); o.value = k.id; o.textContent = k.label; sel.appendChild(o); }
     sel.value = RESOURCE_KINDS.some((k) => k.id === r.kind) ? r.kind : "other";
-    sel.onchange = () => { resources[i].kind = sel.value; $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    sel.onchange = () => { resources[i].kind = sel.value; renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    kindLabel.appendChild(sel);
+    const scopeLabel = document.createElement("label"); scopeLabel.textContent = "Applies to";
+    const scope = document.createElement("select"); scope.setAttribute("aria-label", "Applies to");
+    for (const [value, text] of [["job", "This job"], ["candidate", "Candidate — all jobs"]]) {
+      const option = document.createElement("option"); option.value = value; option.textContent = text; scope.appendChild(option);
+    }
+    scope.value = materialOwner(r);
+    scope.onchange = () => { r.scope = scope.value; renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    scopeLabel.appendChild(scope);
+    const priorityLabel = document.createElement("label"), priorityText = document.createElement("span");
+    priorityText.textContent = `Priority ${materialPriority(r)}/5 — ${MATERIAL_PRIORITIES[materialPriority(r)]}`;
+    const priority = document.createElement("input"); priority.type = "range"; priority.min = "0"; priority.max = "5"; priority.step = "1";
+    priority.value = String(materialPriority(r)); priority.setAttribute("aria-label", "Material priority");
+    priority.oninput = () => {
+      r.priority = Number(priority.value);
+      card.dataset.priority = String(r.priority);
+      priorityText.textContent = `Priority ${r.priority}/5 — ${MATERIAL_PRIORITIES[r.priority]}`;
+      priority.setAttribute("aria-valuetext", MATERIAL_PRIORITIES[r.priority]); renderMaterialStatus();
+    };
+    priority.onchange = () => { renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    priority.setAttribute("aria-valuetext", MATERIAL_PRIORITIES[materialPriority(r)]);
+    priorityLabel.append(priorityText, priority); controls.append(kindLabel, scopeLabel, priorityLabel);
     const ta = document.createElement("textarea");
-    ta.placeholder = "Paste the text here";
+    ta.placeholder = r.kind === "notes" ? "Expected topics, technical domains, skills to emphasize, and links between this job and your experience…" : "Paste the source text here";
     ta.value = r.text || "";
-    ta.oninput = () => { resources[i].text = ta.value; };
+    ta.oninput = () => { resources[i].text = ta.value; renderMaterialStatus(); };
+    const content = document.createElement("div"), status = document.createElement("small");
+    resourceStatuses.set(r, status); content.append(ta, status);
     const del = document.createElement("button");
     del.textContent = "Remove";
     del.onclick = () => { resources.splice(i, 1); renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
-    card.append(sel, ta, del);
+    card.append(controls, content, del);
     box.appendChild(card);
   });
   const n = resources.filter((r) => r.text?.trim()).length;
   $("resSummary").textContent = n ? `${n} material${n === 1 ? "" : "s"} added` : "Add materials";
   if (resources.length) $("resBox").open = true;
+  renderMaterialStatus();
 }
 
 function renderContext() {
+  renderMaterialStatus();
   const rep = contextReport({ stories, cvText: $("cvText").value, jobDescription: $("jobDescription").value, resources, tier: $("contextTier").value });
   const rows = rep.parts.map((p) => p.included
     ? `<tr><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>~${p.tokens.toLocaleString()}</td></tr>`
@@ -370,7 +418,7 @@ async function load() {
     const q = STANDARD_QUESTIONS[giIndex];
     st.textContent = "Tidying into a story card…"; $("giSave").disabled = true;
     try {
-      const card = await storyFromAnswer({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, question: q.q, tag: q.tag, answer });
+      const card = await storyFromAnswer({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, question: q.q, tag: q.tag, answer, resources: applyTier({ resources }, $("contextTier").value).resources });
       stories.push({ ...card, source: "interview", interviewTag: q.tag, missing: undefined,
         result: card.missing?.length ? `${card.result}\n\nStill missing: ${card.missing.join("; ")}` : card.result });
       $("giAnswer").value = "";
@@ -397,7 +445,7 @@ async function load() {
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!stories.length) { st.textContent = "Add some stories first."; return; }
     st.textContent = "Asking Claude…"; $("btnGaps").disabled = true;
-    try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); await save(); }
+    try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories, resources: applyTier({ resources }, $("contextTier").value).resources }); renderLikely(); await save(); }
     catch (e) { st.textContent = e.message; }
     finally { $("btnGaps").disabled = false; }
   });
@@ -472,7 +520,7 @@ async function load() {
     finally { $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
   });
 
-  $("btnAddRes").onclick = () => { resources.push({ kind: "notes", text: "" }); renderResources(); $("resBox").open = true; };
+  $("btnAddRes").onclick = () => { resources.push(normalizeMaterial({ kind: "notes", text: "" }, "job")); renderResources(); $("resBox").open = true; };
   $("btnResUpload").onclick = () => $("resFile").click();
   $("resFile").onchange = () => profileTask(async () => {
     const file = $("resFile").files[0]; if (!file) return;
@@ -485,8 +533,8 @@ async function load() {
       const text = await cvTextFromFile({ name: file.name, bytes,
         pdfToText: isPdf ? (b) => cvTextFromPdf({ apiKey: $("anthropicKey").value.trim(), base64: bytesToBase64(b) }) : null });
       if (!text.trim()) throw new Error("No text found in that file.");
-      const guess = /cover|motivation|letter/i.test(file.name) ? "cover_letter" : /linkedin/i.test(file.name) ? "linkedin" : "other";
-      resources.push({ kind: guess, text });
+      const guess = /notes|interview|briefing/i.test(file.name) ? "notes" : /cover|motivation|letter/i.test(file.name) ? "cover_letter" : /linkedin/i.test(file.name) ? "linkedin" : "other";
+      resources.push(normalizeMaterial({ kind: guess, text }, guess === "notes" ? "job" : undefined));
       renderResources();
       $("resources").dispatchEvent(new Event("input", { bubbles: true }));
       clearTimeout(autosaveTimer);
@@ -516,6 +564,7 @@ async function load() {
       const out = await extractStories({
         apiKey: $("anthropicKey").value.trim(), model: $("model").value.trim(),
         cvText: $("cvText").value, jobDescription: $("jobDescription").value,
+        resources: applyTier({ resources }, $("contextTier").value).resources,
       });
       stories = [...stories, ...out.stories.map((s) => ({ ...s, source: "cv" }))];
       likely = normalizeLikely(out.likely_questions);

@@ -12,7 +12,7 @@ test("materials are labelled by kind, empty ones dropped, order kept", () => {
     { kind: "cover_letter", text: "Dear team" },
     { kind: "mystery", text: "x" },
   ]);
-  assert.equal(out, "## LinkedIn profile\nSenior accountant at Acme\n\n## Cover / motivation letter\nDear team\n\n## Other\nx");
+  assert.equal(out, "## Priority 3/5 — Relevant · LinkedIn profile · Candidate, all jobs\nSenior accountant at Acme\n\n## Priority 3/5 — Relevant · Cover / motivation letter · This job\nDear team\n\n## Priority 3/5 — Relevant · Other · Candidate, all jobs\nx");
   assert.equal(materialsText([]), "");
   assert.equal(materialsText([{ kind: "notes", text: "   " }]), "");
 });
@@ -45,7 +45,7 @@ test("materials live in the cached prefix with a 1h TTL; the digest lives in the
   const a = buildHintRequest({ ...ctx, transcript: [], resources, questions });
   const b = buildHintRequest({ ...ctx, transcript: [], resources, questions: [] });
   assert.deepEqual(a.system, b.system, "digest must not touch the prefix");
-  assert.match(a.system.at(-1).text, /# Additional materials\n## Company research\nAcme is a fintech/);
+  assert.match(a.system.at(-1).text, /# Candidate guidance and prioritized materials\n## Priority 3\/5.*Company research.*\nAcme is a fintech/);
   assert.deepEqual(a.system.at(-1).cache_control, { type: "ephemeral", ttl: "1h" });
   assert.match(a.messages[0].content, /Interview so far:\n1\. Walk me through your resume \[new\] → suggested: A; usage unconfirmed/);
   assert.match(b.messages[0].content, /Interview so far:\n\(first question\)/);
@@ -74,8 +74,8 @@ test("context report breaks the prefix down and flags a prefix too small to cach
 
 test("tiers decide what reaches the coach; unknown tier means everything", () => {
   const all = { stories: ctx.stories, jobDescription: "JD", cvText: "CV", resources: [{ kind: "notes", text: "n" }] };
-  assert.deepEqual(applyTier(all, "lean"), { stories: ctx.stories, jobDescription: "JD", cvText: "", resources: [] });
-  assert.deepEqual(applyTier(all, "standard"), { ...all, resources: [] });
+  assert.deepEqual(applyTier(all, "lean"), { stories: ctx.stories, jobDescription: "JD", cvText: "", resources: all.resources });
+  assert.deepEqual(applyTier(all, "standard"), all);
   assert.deepEqual(applyTier(all, "full"), all);
   assert.deepEqual(applyTier(all, "bogus"), all);
 });
