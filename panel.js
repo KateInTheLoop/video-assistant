@@ -214,7 +214,7 @@ function renderCaptureControls() {
 function setCaptureMode(value) {
   captureMode = questionMode(value);
   captureModeVersion++;
-  scheduler.pending = "";
+  scheduler.clearPending();
   clearTimeout(hintTimer);
   if (partialFrame) cancelAnimationFrame(partialFrame);
   partialFrame = 0; pendingPartial = null;
@@ -244,7 +244,7 @@ function captureQuestion(text, { source = "manual", key = null } = {}) {
   questionInteraction++;
   // Cancel unsent/obsolete automatic work, retaining the one-request-at-a-time gate.
   captureModeVersion++;
-  scheduler.pending = ""; clearTimeout(hintTimer);
+  scheduler.clearPending(); clearTimeout(hintTimer);
   if (partialFrame) cancelAnimationFrame(partialFrame);
   partialFrame = 0; pendingPartial = null;
   const existing = questions.find(q => (key && q.captureKey === key) || q.rawText === text);
@@ -262,7 +262,7 @@ function captureQuestion(text, { source = "manual", key = null } = {}) {
   settleAnswering(questions, { lastCandidateAt });
   questions.push(q); selectedId = q.id;
   manualRequests.push(q.id);
-  renderQueue(); renderQuestion(q);
+  renderQueue({ revealSelected: true }); renderQuestion(q);
   trace.mark("question.capture", { source, id: q.id, chars: text.length });
   void requestHint();
   return q;
@@ -277,13 +277,13 @@ function renderQuestion(q) {
     if (unfinished) ui.qtype.textContent = "Captured question";
     ui.hintActions.hidden = false;
   }
-  if (unfinished) setHintState(sessionStart === null ? "Capture stopped. This question is kept in the queue." : q.analysis === "error" ? "Coaching failed. Choose Answer now to retry." : q.analysis === "loading" ? "Analysing…" : q.status === "later" ? "Postponed. Choose Answer now for coaching." : "Waiting for coaching…", q.analysis === "error");
+  if (unfinished) setHintState(sessionStart === null ? "Capture stopped. This question is kept in the queue." : q.analysis === "error" ? "Coaching failed. Choose Retry coaching." : q.analysis === "loading" ? "Analysing…" : q.status === "later" ? "Postponed. Choose Answer now for coaching." : "Waiting for coaching…", q.analysis === "error");
 }
 
 function selectQuestion(q) {
   questionInteraction++;
   selectedId = q.id;
-  renderQueue(); renderQuestion(q);
+  renderQueue({ revealSelected: true }); renderQuestion(q);
 }
 
 function queueCapturedHint(q) {
@@ -319,7 +319,8 @@ function onFinal({ speaker, text, speechFinal }) {
 
   if (speaker === "interviewer") {
     stopTalkClock();
-    if (captureMode === "auto" && !questions.some(q => q.explicit && q.captureKey === questionCapture.snapshot()?.key)) schedule(scheduler.onInterviewerFinal({ text, speechFinal }, Date.now()));
+    const captureKey = questionCapture.snapshot()?.key || null;
+    if (captureMode === "auto" && !questions.some(q => q.explicit && q.captureKey === captureKey)) schedule(scheduler.onInterviewerFinal({ text, speechFinal, captureKey }, Date.now()));
   }
 }
 
@@ -399,7 +400,7 @@ async function requestHint() {
   if (target) { manualRequests.shift(); target.analysis = "loading"; }
   const modeVersion = captureModeVersion, interaction = questionInteraction;
   const captureRevision = target?.captureRevision || 0;
-  const captureKey = target?.captureKey || questionCapture.snapshot()?.key;
+  const captureKey = target ? target.captureKey : hintScheduler.takenCaptureKey;
   const isCurrent = () => version === sessionVersion && (target ? (target.captureRevision || 0) === captureRevision : modeVersion === captureModeVersion && captureMode === "auto");
   const canShow = () => !!isCurrent() && (target ? target.id === selectedId && ["new", "answering"].includes(target.status) : interaction === questionInteraction);
   const accept = hint => {
@@ -525,7 +526,7 @@ function clearHintCard() {
 // arriving while the interviewer is still talking updates the last entry in place.
 function addQuestion(h, { select = true, rawText = "", captureKey = null } = {}) {
   const last = questions[questions.length - 1];
-  if (shouldSupersede({ last, hint: h, now: Date.now(), lastCandidateAt })) {
+  if ((select || last?.id !== selectedId) && shouldSupersede({ last, hint: h, now: Date.now(), lastCandidateAt })) {
     last.hint = h;
     last.at = Date.now();
     last.rawText = rawText; last.captureKey = captureKey;
@@ -536,8 +537,8 @@ function addQuestion(h, { select = true, rawText = "", captureKey = null } = {})
     questions.push(q);
     if (select) selectedId = q.id;
   }
-  renderQueue();
-  if (!select) return;
+  renderQueue({ revealSelected: select });
+  if (!select) { renderActions(); return; }
   renderHint(h);
   ui.hint.classList.add("fresh");
   setTimeout(() => ui.hint.classList.remove("fresh"), 1500);
@@ -545,7 +546,11 @@ function addQuestion(h, { select = true, rawText = "", captureKey = null } = {})
 
 const STATUS_LABEL = { new: "New", answering: "Answering", answered: "Answered", later: "Postponed", dismissed: "Skipped" };
 
-function renderQueue() {
+function renderQueue({ revealSelected = false } = {}) {
+  const active = document.activeElement, scrollTop = ui.questions.scrollTop;
+  const focusedCard = Array.from(ui.questions.children).find(card => card.contains(active));
+  const focus = focusedCard ? { id: focusedCard.dataset.questionId, action: active.dataset?.action } : null;
+  let restoreFocus = null, selectedControl = null;
   ui.questions.innerHTML = "";
   if (!questions.length) {
     const li = document.createElement("li");
@@ -570,6 +575,8 @@ function renderQueue() {
     if (gap) text.title = "No story in your bank fits this question";
     text.tabIndex = 0; text.setAttribute("role", "button");
     text.id = `question-text-${q.id}`;
+    if (q.id === selectedId) selectedControl = text;
+    if (focus?.id === String(q.id)) restoreFocus = text;
     text.setAttribute("aria-label", `Review question: ${q.explicit ? q.rawText : q.hint.question_summary}`);
     text.onkeydown = event => {
       if (!["Enter", " "].includes(event.key) || event.repeat) return;
@@ -585,18 +592,39 @@ function renderQueue() {
     }
 
     const actions = document.createElement("div"); actions.className = "qActions";
-    for (const [action, label] of [["answering", q.status === "answering" ? "Done" : "Answer now"], ["later", "Postpone"], ["dismissed", "Skip"]]) {
+    const choices = [["answering", q.status === "answering" ? "Done" : "Answer now"], ["later", "Postpone"], ["dismissed", "Skip"]];
+    if (q.analysis === "error") choices.push(["retry", "Retry coaching"]);
+    for (const [action, label] of choices) {
       const button = document.createElement("button"); button.className = "small";
       button.textContent = label; button.dataset.action = action;
       button.setAttribute("aria-describedby", text.id);
-      button.disabled = action !== "answering" ? q.status === action : sessionStart === null && !!q.analysis && q.analysis !== "ready";
-      button.onclick = event => { event.stopPropagation(); setQuestionStatus(q, action === "answering" && q.status === "answering" ? "answered" : action); };
+      button.disabled = action === "retry" ? sessionStart === null : action !== "answering" ? q.status === action : sessionStart === null && !!q.analysis && q.analysis !== "ready";
+      button.onclick = event => { event.stopPropagation(); if (action === "retry") retryQuestion(q); else if (action === "answering") answerQuestion(q); else setQuestionStatus(q, action); };
+      if (focus?.id === String(q.id) && focus.action === action && !button.disabled) restoreFocus = button;
       actions.appendChild(button);
     }
     li.appendChild(actions);
     li.onclick = () => selectQuestion(q);
     ui.questions.appendChild(li);
   }
+  ui.questions.scrollTop = scrollTop;
+  if (revealSelected && !restoreFocus) selectedControl?.scrollIntoView({ block: "nearest" });
+  restoreFocus?.focus();
+}
+
+function answerQuestion(q) {
+  setQuestionStatus(q, q.status === "answering" ? "answered" : "answering");
+}
+
+function retryQuestion(q) {
+  if (sessionStart === null || q.analysis !== "error") return;
+  const focusedRetry = ui.hintActions.contains(document.activeElement) && document.activeElement.dataset?.act === "retry";
+  questionInteraction++;
+  if (!["new", "answering"].includes(q.status)) q.status = "new";
+  selectedId = q.id;
+  queueCapturedHint(q);
+  renderQueue({ revealSelected: true }); renderQuestion(q);
+  if (focusedRetry) ui.hintActions.querySelector('[data-act="answering"]').focus();
 }
 
 // Set a question's triage state. Dismissing the selected one hands focus to the newest live question.
@@ -610,7 +638,7 @@ function setQuestionStatus(q, status) {
     if (next) renderQuestion(next);
     else clearHintCard();
   }
-  renderQueue();
+  renderQueue({ revealSelected: status === "answering" });
   if (selectedId === q.id) renderQuestion(q);
 }
 
@@ -860,16 +888,17 @@ function renderHint(h, { partial = false } = {}) {
   ui.hintActions.hidden = partial; // chips need a queue entry, which only the final hint creates
 }
 
-// The chips mirror the selected question's state, so "Answer this" reads "Answering ✓ done"
-// once clicked and a second tap marks it answered instead of silently clearing it.
-const ACT_LABEL = { answering: "Answer now", later: "Postpone", dismissed: "Skip" };
+// Answer/Done follows the user's response state. Retrying failed coaching is a
+// separate action so it never silently marks an answer complete.
+const ACT_LABEL = { answering: "Answer now", later: "Postpone", dismissed: "Skip", retry: "Retry coaching" };
 function renderActions() {
   const q = questions.find((x) => x.id === selectedId);
   for (const b of ui.hintActions.querySelectorAll("[data-act]")) {
     const act = b.dataset.act;
     const on = q && q.status === act;
     b.classList.toggle("on", !!on);
-    b.disabled = act === "answering" && sessionStart === null && !!q?.analysis && q.analysis !== "ready";
+    b.hidden = act === "retry" && q?.analysis !== "error";
+    b.disabled = sessionStart === null && (act === "retry" || (act === "answering" && !!q?.analysis && q.analysis !== "ready"));
     b.textContent = on && act === "answering" ? "Answering \u2014 tap when done" : ACT_LABEL[act];
   }
 }
@@ -1218,8 +1247,10 @@ async function stopAll() {
     if (!act) return;
     const q = questions.find((x) => x.id === selectedId);
     if (!q) return;
-    // Tapping "Answer this" again means "I answered it"; the other chips toggle off.
-    setQuestionStatus(q, q.status === act ? (act === "answering" ? "answered" : "new") : act);
+    // Retrying failed coaching is separate from marking an answer complete.
+    if (act === "retry") retryQuestion(q);
+    else if (act === "answering") answerQuestion(q);
+    else setQuestionStatus(q, q.status === act ? "new" : act);
     renderActions();
   };
 })();

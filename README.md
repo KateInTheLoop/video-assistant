@@ -88,6 +88,9 @@ questions and can be resumed with **Answer now**. Captures appear immediately, b
 finishes. Postponing/skipping queued captures avoids starting their coaching requests; a
 request already in progress may finish and cache its hint without replacing your selected
 card. Capturing the same utterance reopens its card rather than adding duplicates.
+If coaching fails, **Retry coaching** requests another hint without marking the question
+answered. **Done** remains available if you answered without coaching. Keyboard focus stays
+on the same card or action when the queue updates.
 
 ## What the coach knows
 Each live hint receives your enabled coach notes and selected resume summary plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5. Explicit resume requests with a prepared answer are retrieved locally.

@@ -60,6 +60,8 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
   **Postponed** (amber), and **Skipped** (gray). Use **Answer now**, **Postpone**, or **Skip**
   directly on a card. **Done** marks it answered; **Answer now** resumes a postponed/skipped
   card. Captures appear before coaching is ready, and late hints keep your selected card.
+  If coaching fails, use **Retry coaching** on the card or hint. **Done** remains separate,
+  so you can finish an answer without retrying. Queue updates preserve keyboard focus.
 - Choose **Text-heavy**, **Whiteboard**, or **Current** in the coach header. Text-heavy starts
   with a small call above the transcript and a wide answer column. Whiteboard enlarges the
   shared picture; Current keeps the previous arrangement. Drag dividers in wide windows,

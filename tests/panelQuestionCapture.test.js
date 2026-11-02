@@ -285,3 +285,121 @@ test("mode choice persists locally and blocked storage does not disable manual c
   blocked.manual(); blocked.final("Capture despite blocked storage?"); blocked.$("btnCaptureQuestion").onclick(); await flush();
   assert.equal(blocked.calls.length, 1); assert.match(blocked.$("questionCaptureNotice").textContent, /saving is unavailable/);
 });
+
+test("queued automatic question identity cannot overwrite a postponed card when newer words arrive", async () => {
+  let now = 1_000_000; class Clock extends Date { static now() { return now; } }
+  const first = deferred(), second = deferred(), calls = [];
+  const h = await coach({ Date: Clock, getHint: options => {
+    calls.push(options);
+    return calls.length === 1 ? first.promise : calls.length === 2 ? second.promise : Promise.resolve(result(options.question));
+  } });
+  h.final("Initial question A?"); const initial = h.run("requestHint()");
+  now += 100; h.final("Queued question B?");
+  now += 100; h.interim("Current question C");
+  now += 3000; first.resolve(result("Question A")); await initial;
+  const queued = h.run("requestHint()");
+  const followup = result("Question B"); followup.hint.follow_up = true;
+  second.resolve(followup); await queued;
+  h.run('setQuestionStatus(questions[1], "later")');
+  const postponed = h.run("questions[1]");
+  assert.equal(postponed.captureKey, "turn:2");
+  const captured = h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.equal(h.run("questions.length"), 3);
+  assert.equal(postponed.rawText, "Queued question B?"); assert.equal(postponed.status, "later");
+  assert.notEqual(captured.id, postponed.id); assert.equal(captured.captureKey, "turn:3");
+});
+
+test("an automatic response preserves both the selected card and its displayed coaching", async () => {
+  let now = 1_000_000; class Clock extends Date { static now() { return now; } }
+  const second = deferred(); let calls = 0;
+  const h = await coach({ Date: Clock, getHint: () => ++calls === 1 ? Promise.resolve(result("Question A")) : second.promise });
+  h.final("Explain retries?"); await h.run("requestHint()");
+  now += 3000; h.final("Explain indexes?"); const request = h.run("requestHint()");
+  h.run("selectQuestion(questions[0])"); second.resolve(result("Question B")); await request;
+  assert.equal(h.run("questions.length"), 2); assert.equal(h.run("selectedId"), h.run("questions[0].id"));
+  assert.equal(h.run("questions[0].hint.question_summary"), "Question A");
+  assert.equal(h.$("question").textContent, "Question A");
+  assert.equal(h.run("questions[1].hint.question_summary"), "Question B");
+});
+
+test("keyboard review keeps focus on its replacement control and preserves queue scrolling", async () => {
+  const h = await coach(); h.manual(); h.final("The reviewed question?"); h.$("btnCaptureQuestion").onclick(); await flush();
+  const original = h.$("questions").children[0].children[1];
+  h.$("questions").scrollTop = 90; original.focus();
+  original.onkeydown({ key: "Enter", preventDefault() {}, stopPropagation() {} });
+  const replacement = h.$("questions").children[0].children[1];
+  assert.notEqual(original, replacement); assert.equal(h.context.document.activeElement, replacement);
+  assert.equal(h.$("questions").scrollTop, 90);
+  replacement.onkeydown({ key: " ", preventDefault() {}, stopPropagation() {} });
+  assert.equal(h.run("questions.length"), 1); assert.equal(h.calls.length, 1);
+});
+
+test("queue updates retain a focused action and fall back to review when that action is disabled", async () => {
+  const h = await coach(); h.manual(); h.final("The selected question?"); const q = h.$("btnCaptureQuestion").onclick(); await flush();
+  const actions = () => h.$("questions").children.find(row => row.dataset.questionId === String(q.id)).lastChild.children;
+  actions().find(button => button.dataset.action === "later").focus();
+  h.run("renderQueue()");
+  assert.equal(h.context.document.activeElement, actions().find(button => button.dataset.action === "later"));
+  h.context.document.activeElement.onclick({ stopPropagation() {} });
+  const review = h.$("questions").children.find(row => row.dataset.questionId === String(q.id)).children[1];
+  assert.equal(h.context.document.activeElement, review); assert.equal(q.status, "later");
+});
+
+test("explicit captures reveal their card while background redraws preserve outside focus", async () => {
+  const h = await coach(); h.manual();
+  const create = h.context.document.createElement, revealed = [];
+  h.context.document.createElement = tag => { const node = create(tag); node.scrollIntoView = () => revealed.push(node); return node; };
+  h.final("A newly captured question?"); const q = h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.ok(revealed.some(node => node.id === `question-text-${q.id}`));
+  const count = revealed.length;
+  h.$("questionMode").focus(); h.run("renderQueue()");
+  assert.equal(h.context.document.activeElement, h.$("questionMode"));
+  assert.equal(revealed.length, count);
+});
+
+test("an answering question has a separate Retry action after failure and can still be marked done", async () => {
+  const first = deferred(); let attempts = 0;
+  const h = await coach({ getHint: options => ++attempts === 1 ? first.promise : Promise.resolve(result(options.question)) });
+  h.manual(); h.final("Explain retry safety?"); const q = h.$("btnCaptureQuestion").onclick();
+  h.run('setQuestionStatus(questions[0], "answering")');
+  first.reject(new Error("Sample request failure")); await flush();
+  let actions = h.$("questions").children[0].lastChild.children;
+  assert.equal(actions[0].textContent, "Done");
+  const retry = actions.find(button => button.dataset.action === "retry");
+  assert.equal(retry.textContent, "Retry coaching"); assert.match(h.$("hintState").textContent, /Retry coaching/);
+  retry.onclick({ stopPropagation() {} }); await flush();
+  assert.equal(attempts, 2); assert.equal(q.status, "answering"); assert.equal(q.analysis, "ready");
+  assert.equal(h.run("questions.length"), 1);
+  actions = h.$("questions").children[0].lastChild.children;
+  assert.equal(actions.some(button => button.dataset.action === "retry"), false);
+  actions[0].onclick({ stopPropagation() {} });
+  assert.equal(q.status, "answered"); assert.equal(attempts, 2);
+});
+
+test("the main Retry action preserves answer status and hands keyboard focus to a visible action", async () => {
+  const first = deferred(); let attempts = 0;
+  const h = await coach({ getHint: options => ++attempts === 1 ? first.promise : Promise.resolve(result(options.question)) });
+  const buttons = ["answering", "later", "dismissed", "retry"].map(act => {
+    const button = h.context.document.createElement("button"); button.dataset.act = act; h.$("hintActions").appendChild(button); return button;
+  });
+  h.$("hintActions").querySelectorAll = () => buttons;
+  h.$("hintActions").querySelector = selector => buttons.find(button => selector === `[data-act="${button.dataset.act}"]`);
+  h.manual(); h.final("Explain retries?"); const q = h.$("btnCaptureQuestion").onclick();
+  h.$("hintActions").onclick({ target: buttons[0] });
+  first.reject(new Error("Sample failure")); await flush();
+  assert.equal(buttons[3].hidden, false); buttons[3].focus();
+  h.$("hintActions").onclick({ target: buttons[3] }); await flush();
+  assert.equal(attempts, 2); assert.equal(q.status, "answering"); assert.equal(q.analysis, "ready");
+  assert.equal(buttons[3].hidden, true); assert.equal(h.context.document.activeElement, buttons[0]);
+});
+
+test("Done remains available after a coaching failure without forcing a retry", async () => {
+  const pending = deferred(); let attempts = 0;
+  const h = await coach({ getHint: () => { attempts++; return pending.promise; } });
+  h.manual(); h.final("A question answered from memory?"); const q = h.$("btnCaptureQuestion").onclick();
+  h.run('setQuestionStatus(questions[0], "answering")');
+  pending.reject(new Error("Sample failure")); await flush();
+  const done = h.$("questions").children[0].lastChild.children.find(button => button.dataset.action === "answering");
+  assert.equal(done.textContent, "Done"); done.onclick({ stopPropagation() {} });
+  assert.equal(q.status, "answered"); assert.equal(attempts, 1);
+});
