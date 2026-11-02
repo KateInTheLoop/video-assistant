@@ -16,6 +16,11 @@ test("topic intent overrides whole-career routing and keeps incident questions b
   const incident = routeQuestionHint({ ...routed }, "Tell me about a time you used SQL");
   assert.equal(incident.question_type, "behavioral");
   assert.equal(incident.experience_topic, "");
+  const resume = routeQuestionHint({ ...base, question_type: "topic_experience", experience_topic: "Accounting" }, "Walk me through your resume");
+  assert.equal(resume.question_type, "career_walkthrough", "a mistaken model topic label cannot suppress a literal resume request");
+  for (const text of ["Walk me through your background in accounts payable.", "Walk me through your background with SQL.", "Give an overview of your career in finance.", "Tell me about your background in reporting."]) {
+    assert.equal(routeQuestionHint(base, text).question_type, "topic_experience", text);
+  }
 });
 
 test("terse topic follow-ups inherit duration context without turning definitions into personal experience", () => {

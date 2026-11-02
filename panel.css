@@ -148,3 +148,6 @@ button.small { font-size: 12px; padding: 5px 10px; min-height: 0; text-transform
 .experienceDuration { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
 .experienceDuration small { display: block; margin-top: 6px; color: var(--muted); }
 .stories[hidden] { display: none; }
+.resumeAnswer { margin-top: 12px; padding: 12px; border: 1px solid var(--accent); border-radius: 6px; }
+.resumeAnswer small { display: block; margin-top: 4px; color: var(--muted); }
+#resumeAnswerText { margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.55; }

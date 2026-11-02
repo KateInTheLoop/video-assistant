@@ -46,7 +46,12 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
 ## 4. During the call
 - The big line is the question, restated. Technical questions show factual **Technical notes**, including explanations and small examples. Experience questions show up to three of your stories with cues and up to six keywords.
 - **Used this story** confirms that you actually drew on a suggested story. Unconfirmed suggestions do not count as used.
-- "Walk me through your resume" opens the complete **Career walkthrough**: an opening overview,
+- To prepare that opening, use **Content → Interview guidance and materials → Add resume summary**.
+  Paste your exact answer, keeping **This job** for a tailored version. You can also change an
+  existing note's Material type to **Resume summary / prepared answer**; its text is retained.
+- "Walk me through your resume" or "Tell me about yourself" shows that prepared answer
+  immediately and verbatim. Expand **CV timeline and supporting roles** for more detail.
+  Without a prepared answer, the complete **Career walkthrough** shows an opening overview,
   all dated roles from the CV, a slider and Previous/Next buttons. Click any role to jump to it;
   use the Order dropdown to switch between oldest-first and newest-first. Read the first few
   responsibilities on each card and open **More from this role** for the remaining CV details.

@@ -192,3 +192,88 @@ test("material controls save priority and scope, and job notes do not leak acros
   assert.equal(h.stored().candidates["c-1"].resources[0].scope, "candidate");
   assert.equal(h.stored().jobs["j-1"].resources.length, 0);
 });
+
+test("a prepared resume summary defaults to this job and survives an explicit change to all jobs", async () => {
+  const h = await settingsHarness();
+  const find = (node, predicate) => predicate(node) ? node : (node.children || []).map(child => find(child, predicate)).find(Boolean);
+  h.$("btnAddResumeSummary").onclick();
+  let card = h.$("resources").children[0];
+  assert.equal(find(card, node => node.getAttribute?.("aria-label") === "Material type").value, "resume_summary");
+  assert.equal(find(card, node => node.type === "range").value, "5");
+  assert.equal(find(card, node => node.getAttribute?.("aria-label") === "Applies to").value, "job");
+  const answer = "I began in operational support.\n\nI now focus on reporting and controls.";
+  const text = find(card, node => node.placeholder?.startsWith("Paste your exact prepared answer"));
+  text.value = answer; text.oninput();
+  h.$("contextTier").value = "lean";
+  h.run("renderContext()");
+  assert.match(h.$("resBudget").textContent, /1 of 1 enabled material included/);
+  await h.$("btnSave").onclick();
+  assert.equal(h.stored().jobs["j-1"].resources[0].text, answer);
+  assert.equal(h.stored().jobs["j-1"].resources[0].kind, "resume_summary");
+  assert.equal(h.stored().jobs["j-1"].resources[0].priority, 5);
+  assert.equal(h.stored().candidates["c-1"].resources.length, 0);
+  h.$("jobSel").value = "j-2"; await h.$("jobSel").onchange();
+  assert.equal(h.$("resources").children.length, 0);
+  h.$("jobSel").value = "j-1"; await h.$("jobSel").onchange();
+  card = h.$("resources").children[0];
+  const scope = find(card, node => node.getAttribute?.("aria-label") === "Applies to");
+  scope.value = "candidate"; scope.onchange();
+  await h.$("btnSave").onclick();
+  assert.equal(h.stored().jobs["j-1"].resources.length, 0);
+  assert.equal(h.stored().candidates["c-1"].resources[0].text, answer);
+  assert.equal(h.stored().candidates["c-1"].resources[0].scope, "candidate");
+  h.$("jobSel").value = "j-2"; await h.$("jobSel").onchange();
+  assert.equal(h.$("resources").children.length, 1);
+});
+
+test("converting a note into a resume summary preserves its exact text, priority and scope", async () => {
+  const h = await settingsHarness();
+  const find = (node, predicate) => predicate(node) ? node : (node.children || []).map(child => find(child, predicate)).find(Boolean);
+  h.$("btnAddRes").onclick();
+  let card = h.$("resources").children[0];
+  const original = "  My opening answer keeps this sequence.\n\nThen I connect it to this role.  ";
+  const notes = find(card, node => node.placeholder?.startsWith("Expected topics"));
+  notes.value = original; notes.oninput();
+  const priority = find(card, node => node.type === "range");
+  priority.value = "4"; priority.oninput(); priority.onchange();
+  card = h.$("resources").children[0];
+  const kind = find(card, node => node.getAttribute?.("aria-label") === "Material type");
+  assert.equal(kind.value, "notes", "text alone does not classify a note as a prepared answer");
+  kind.value = "resume_summary"; kind.onchange();
+  card = h.$("resources").children[0];
+  assert.equal(find(card, node => node.placeholder?.startsWith("Paste your exact prepared answer")).value, original);
+  await h.$("btnSave").onclick();
+  const saved = h.stored().jobs["j-1"].resources[0];
+  assert.equal(saved.kind, "resume_summary");
+  assert.equal(saved.text, original);
+  assert.equal(saved.priority, 4);
+  assert.equal(saved.scope, "job");
+});
+
+test("material status distinguishes the selected resume summary from a superseded answer", async () => {
+  const h = await settingsHarness();
+  h.$("contextTier").value = "lean";
+  h.run(`resources = [
+    { kind: "notes", text: "Emphasize controls.", priority: 5, scope: "job" },
+    { kind: "resume_summary", text: "My general prepared opening.", priority: 5, scope: "candidate" },
+    { kind: "resume_summary", text: "My opening tailored to this role.", priority: 5, scope: "job" }
+  ]; renderResources();`);
+  const statuses = Array.from(h.run("[...resourceStatuses.values()].map(label => label.textContent)"));
+  assert.equal(statuses.filter(text => text === "Included in AI context").length, 2);
+  assert.equal(statuses.filter(text => text.startsWith("Another prepared resume answer is selected")).length, 1);
+  assert.match(h.$("resBudget").textContent, /2 of 3 enabled materials included/);
+  h.run("resources[2].priority = 0; renderResources()");
+  const changed = Array.from(h.run("[...resourceStatuses.values()].map(label => label.textContent)"));
+  assert.equal(changed.filter(text => text === "Included in AI context").length, 2);
+  assert.equal(changed.filter(text => text.startsWith("Another prepared resume answer is selected")).length, 0);
+  assert.match(h.$("resBudget").textContent, /2 of 2 enabled materials included/);
+});
+
+test("an oversized prepared answer distinguishes the model excerpt from the full saved answer", async () => {
+  const h = await settingsHarness();
+  h.run('resources = [{ kind: "resume_summary", text: "Synthetic prepared opening. ".repeat(1200), priority: 5, scope: "job" }]; renderResources()');
+  const statuses = Array.from(h.run("[...resourceStatuses.values()].map(label => label.textContent)"));
+  assert.match(statuses[0], /AI receives an excerpt/);
+  assert.match(statuses[0], /coach displays your full saved answer/);
+  assert.match(h.$("resBudget").textContent, /1 of 1 enabled material included/);
+});

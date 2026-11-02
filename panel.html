@@ -28,7 +28,7 @@
 
   <div class="coach">
     <div id="bankWarn" class="banner" hidden>
-      Your story bank is empty. Technical notes still work; add stories for questions about your experience.
+      Your story bank is empty. Technical notes, CV timelines and prepared resume answers still work; add stories for behavioral examples.
       <a href="options.html" target="_blank">Add your CV and stories in Settings</a> to get hints that point at your own experience.
     </div>
 
@@ -40,9 +40,16 @@
       <div class="question" id="question">Waiting for a question…</div>
       <section id="careerWalkthrough" class="careerWalkthrough" hidden>
         <b id="careerTitle">Career walkthrough</b>
+        <section id="resumeAnswerBox" class="resumeAnswer" hidden aria-label="Prepared resume answer">
+          <b>Your prepared resume answer</b>
+          <small id="resumeAnswerScope"></small>
+          <div id="resumeAnswerText"></div>
+        </section>
         <p id="careerSummary"></p>
         <div id="experienceDuration" class="experienceDuration" hidden></div>
         <ul id="careerOverview"></ul>
+        <details id="careerTimelineDetails" open>
+          <summary>CV timeline and supporting roles</summary>
         <div class="careerControls">
           <label for="careerOrder">Order</label>
           <select id="careerOrder"><option value="oldest">Oldest → newest</option><option value="newest">Newest → oldest</option></select>
@@ -63,6 +70,7 @@
           <nav id="careerRoles" class="careerRoles" aria-label="Career roles"></nav>
         </details>
         <p id="careerClose">Close by connecting the relevant experience to this job. Explain transitions in your own words.</p>
+        </details>
       </section>
       <section id="technicalNotes" class="technicalNotes" hidden>
         <b>Technical notes</b>

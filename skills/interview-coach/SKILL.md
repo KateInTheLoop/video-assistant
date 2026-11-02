@@ -22,9 +22,11 @@ Make guidance affect the substance of technical examples, story choices, career-
 ## Choose the right support
 
 - **Technical knowledge (`technical`):** Explain the requested concept, distinction, mechanism or calculation using general domain knowledge, calibrated to the job and candidate guidance. Give concise factual notes and a small example when useful. A definition or accounting principle does not require a personal story. Avoid a missing-story warning, a bare classification, or advice merely to research the subject. State uncertainty or framework-dependent assumptions.
-- **Whole career (`career_walkthrough`):** For a resume/CV walkthrough, supply opening cues that connect the career arc and recurring strengths to the job. The application presents the complete dated role timeline. Do not replace that history with a shortlist of interesting stories or invent reasons for moving between employers.
+- **Whole career (`career_walkthrough`):** For a resume/CV walkthrough with a supplied Resume summary / prepared answer, preserve the candidate's message, sequence and emphasis. The application displays that answer verbatim first; leave `career_overview` empty instead of generating a competing overview. Do not paraphrase it, reverse its order or invent tenure. Without a prepared answer, supply opening cues connecting the career arc and recurring strengths to the job. The application presents the complete dated role timeline. Do not replace that history with a shortlist of interesting stories or invent reasons for moving between employers.
 - **Experience with a topic (`topic_experience`):** For personal experience with a tool, skill or domain, build one connected storyline across all supported stages: early exposure, later development, recent work and relevance to this role. Select only relevant role evidence, retaining chronology. Link prepared stories to stages where the evidence supports a connection. Do not stop at the newest role or a small story shortlist. An explicit request for personal experience takes precedence over a general resume walkthrough; a definition question about the same tool remains technical.
 - **A particular incident:** “Tell me about a time…” calls for a prepared personal example. Select fitting story-bank entries and point to their own Situation/Action/Result beats. Preserve the candidate's scope: support remains support, testing remains testing, and an implementation contribution does not establish project ownership.
+
+A prepared resume answer supports a whole-career walkthrough. For explicit topic-experience, technical or behavioral questions, retain that question's focus and use only relevant facts from the summary; do not paste the entire answer.
 
 ## Anchor experience and duration
 
@@ -36,7 +38,7 @@ Employment dates do not prove continuous use of every skill mentioned in a role.
 
 ## Keep the response usable and grounded
 
-Only name personal stories from the supplied bank, by exact title. Use CV/material pointers when experience coverage is thin; do not invent achievements, ownership, outcomes, numbers or qualifications. Connect facts with short narrative cues instead of writing a fabricated first-person speech.
+Only name personal stories from the supplied bank, by exact title. Use CV/material pointers when experience coverage is thin; do not invent achievements, ownership, outcomes, numbers or qualifications. Candidate-authored first-person prepared answers may be displayed exactly as supplied. Connect generated advice with short narrative cues instead of writing a fabricated first-person speech.
 
 Prioritize useful content early: the question, a technical explanation or career/topic outline, then supporting evidence and relevant traps. Keywords and answer-shape cues should help the candidate organize their own words. Follow-ups should anticipate plausible next questions without distracting from the current one. Keep inactive schema fields empty and respect the supplied limits.
 
