@@ -26,6 +26,30 @@ let stories = [];
 let likely = [];
 let resources = [];   // [{kind, text}] extra materials for the coach (candidate's + job's, flattened)
 let profiles = null;  // the candidate / job lists; the flat fields above belong to the active pair
+let profileTasks = 0;
+let profileChanges = 0;
+const PROFILE_CONTROLS = ["candidateSel", "jobSel", "cNew", "cDup", "cDel", "jNew", "jDup", "jDel", "btnImportProfile"];
+
+function renderProfileLock() {
+  const busy = profileTasks > 0 || profileChanges > 0;
+  for (const id of PROFILE_CONTROLS) $(id).disabled = busy;
+  $("cDel").disabled ||= Object.keys(profiles.candidates).length <= 1;
+  $("jDel").disabled ||= Object.keys(profiles.jobs).length <= 1;
+  $("profileBusy").textContent = profileTasks ? "Preparing content. Candidate and job selection will unlock when it is saved." : "";
+}
+
+// Lock synchronously, before any file read or API request can yield. Hold the lock through
+// the final save, including debounced upload saves, and always release it after failures.
+async function profileTask(work) {
+  if (profileChanges) {
+    $("profileBusy").textContent = "Wait for the profile switch to finish, then try again.";
+    return;
+  }
+  profileTasks++;
+  renderProfileLock();
+  try { return await work(); }
+  finally { profileTasks--; renderProfileLock(); }
+}
 
 // --- Tabs: Start is one screen, Content is everything the coach draws on ---------------
 const TABS = ["start", "content"];
@@ -50,21 +74,25 @@ function renderProfiles() {
   };
   fill($("candidateSel"), profiles.candidates, profiles.activeCandidate, candidateLabel);
   fill($("jobSel"), profiles.jobs, profiles.activeJob, jobLabel);
-  $("cDel").disabled = Object.keys(profiles.candidates).length <= 1;
-  $("jDel").disabled = Object.keys(profiles.jobs).length <= 1;
+  renderProfileLock();
 }
 
 // Switching or managing profiles: flush pending edits into the current pair first so nothing
 // typed in the last moment is lost, apply the change to a fresh copy, store, reload.
 function withProfiles(fn) {
+  if (profileTasks) return Promise.resolve();
+  profileChanges++;
+  renderProfileLock();
   clearTimeout(autosaveTimer);
   return serial(async () => {
     await saveNow();
     const next = fn((await loadSettings()).profiles);
     if (!next) return;
     await saveSettings({ profiles: next });
+    giSkipped = new Set();
+    $("giAnswer").value = "";
     await load();
-  });
+  }).finally(() => { profileChanges--; renderProfileLock(); });
 }
 
 function renderStories() {
@@ -294,8 +322,8 @@ async function load() {
   if (location.hash === "#mic") { $("micBox").open = true; $("mic").scrollIntoView(); }
 
   // Candidate / job pickers and management
-  $("candidateSel").onchange = () => withProfiles((p) => setActive(p, { candidate: $("candidateSel").value }));
-  $("jobSel").onchange = () => withProfiles((p) => setActive(p, { job: $("jobSel").value }));
+  $("candidateSel").onchange = () => { const candidate = $("candidateSel").value; return withProfiles((p) => setActive(p, { candidate })); };
+  $("jobSel").onchange = () => { const job = $("jobSel").value; return withProfiles((p) => setActive(p, { job })); };
   $("cNew").onclick = () => { const name = prompt("Candidate's first name (you can change it later):", ""); if (name === null) return; withProfiles((p) => addCandidate(p, { name: name.trim() }).profiles); };
   $("jNew").onclick = () => { const title = prompt("Job title, e.g. Senior Accountant, Northwind:", ""); if (title === null) return; withProfiles((p) => addJob(p, { title: title.trim() }).profiles); };
   $("cDup").onclick = () => withProfiles((p) => duplicateCandidate(p, p.activeCandidate).profiles);
@@ -318,7 +346,7 @@ async function load() {
   };
 
   $("giSkip").onclick = () => { giSkipped.add(STANDARD_QUESTIONS[giIndex].tag); $("giAnswer").value = ""; renderInterview(); };
-  $("giSave").onclick = async () => {
+  $("giSave").onclick = () => profileTask(async () => {
     const st = $("giStatus");
     const answer = $("giAnswer").value.trim();
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
@@ -334,7 +362,7 @@ async function load() {
       st.textContent = `Saved "${card.title}".`;
     } catch (e) { st.textContent = e.message; }
     finally { $("giSave").disabled = false; }
-  };
+  });
   $("btnClearDiag").onclick = async () => { await chrome.storage.local.set({ diag: [] }); renderDiag(); };
 
   $("btnMic").onclick = async () => {
@@ -348,7 +376,7 @@ async function load() {
     } catch (e) { st.textContent = `${e.name}: ${e.message}`; }
   };
 
-  $("btnGaps").onclick = async () => {
+  $("btnGaps").onclick = () => profileTask(async () => {
     const st = $("gapStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!stories.length) { st.textContent = "Add some stories first."; return; }
@@ -356,10 +384,10 @@ async function load() {
     try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories }); renderLikely(); await save(); }
     catch (e) { st.textContent = e.message; }
     finally { $("btnGaps").disabled = false; }
-  };
+  });
   $("btnExport").onclick = () => downloadJson(exportBank(stories, likely), `story-bank-${new Date().toISOString().slice(0, 10)}.json`);
   $("btnImport").onclick = () => $("importFile").click();
-  $("importFile").onchange = async () => {
+  $("importFile").onchange = () => profileTask(async () => {
     const file = $("importFile").files[0]; if (!file) return;
     try {
       const { stories: incoming, likelyQuestions } = importBank(await file.text());
@@ -369,7 +397,7 @@ async function load() {
       $("bankStatus").textContent = `Imported ${r.added} stories (${r.skipped} duplicates skipped).`;
     } catch (e) { $("bankStatus").textContent = e.message; }
     $("importFile").value = "";
-  };
+  });
 
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
   $("btnSave").onclick = saveAndRefresh;
@@ -397,7 +425,7 @@ async function load() {
   // Upload: every format ends up as plain text in the textarea, which then autosaves.
   // Only PDFs need Claude (one short Haiku call); DOCX and text are parsed locally.
   $("btnCvUpload").onclick = () => $("cvFile").click();
-  $("cvFile").onchange = async () => {
+  $("cvFile").onchange = () => profileTask(async () => {
     const file = $("cvFile").files[0]; if (!file) return;
     const st = $("cvStatus");
     const isPdf = /\.pdf$/i.test(file.name);
@@ -414,14 +442,16 @@ async function load() {
       if (!text.trim()) throw new Error("No text found in that file. If it is a scanned PDF, paste the text instead.");
       $("cvText").value = text;
       $("cvText").dispatchEvent(new Event("input", { bubbles: true })); // autosave like a paste
+      clearTimeout(autosaveTimer);
+      await save();
       st.textContent = `Loaded ${file.name}: ${text.length.toLocaleString()} characters. Check it reads right, then draft stories.`;
     } catch (e) { st.textContent = e.message; }
     finally { $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
-  };
+  });
 
   $("btnAddRes").onclick = () => { resources.push({ kind: "notes", text: "" }); renderResources(); $("resBox").open = true; };
   $("btnResUpload").onclick = () => $("resFile").click();
-  $("resFile").onchange = async () => {
+  $("resFile").onchange = () => profileTask(async () => {
     const file = $("resFile").files[0]; if (!file) return;
     const st = $("resStatus");
     const isPdf = /\.pdf$/i.test(file.name);
@@ -436,10 +466,12 @@ async function load() {
       resources.push({ kind: guess, text });
       renderResources();
       $("resources").dispatchEvent(new Event("input", { bubbles: true }));
+      clearTimeout(autosaveTimer);
+      await save();
       st.textContent = `Added ${file.name}. Pick what it is in the dropdown.`;
     } catch (e) { st.textContent = e.message; }
     finally { $("resFile").value = ""; }
-  };
+  });
   $("btnCountCtx").onclick = async () => {
     const st = $("ctxStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
@@ -451,7 +483,7 @@ async function load() {
     } catch (e) { st.textContent = e.message; }
   };
 
-  $("btnExtract").onclick = async () => {
+  $("btnExtract").onclick = () => profileTask(async () => {
     const st = $("extractStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!$("cvText").value.trim()) { st.textContent = "Upload or paste a CV first."; return; }
@@ -468,5 +500,5 @@ async function load() {
       st.textContent = `Drafted ${out.stories.length} stories and saved. Edit them until they sound like you.`;
     } catch (e) { st.textContent = e.message; }
     finally { $("btnExtract").disabled = false; }
-  };
+  });
 })();

@@ -58,6 +58,8 @@ paste its description, and switch back later without touching your stories. **Du
 an entry; **Delete** removes it. Export the active candidate or job as JSON to move it to another
 machine; importing adds it as a new entry and makes it active. An install from before profiles
 is migrated once into one candidate and one job, with nothing changed about what the coach sees.
+Candidate and job selection pauses while drafting, importing, or uploading content, and unlocks
+after it is saved, so results always stay with the selected profiles.
 
 ## One screen: the call beside the coach
 
