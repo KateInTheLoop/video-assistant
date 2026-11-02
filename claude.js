@@ -2,6 +2,7 @@
 import { parsePartialJson } from "./lib/partialJson.js";
 import { buildHintRequest, buildPrewarmRequest } from "./lib/hintRequest.js";
 import { STORY_FROM_ANSWER_SCHEMA } from "./lib/storyInterview.js";
+import { materialsText, MATERIAL_GUIDANCE } from "./lib/context.js";
 
 const API = "https://api.anthropic.com/v1/messages";
 
@@ -172,7 +173,7 @@ export async function cvTextFromPdf({ apiKey, base64 }) {
   return data.text;
 }
 
-export async function extractStories({ apiKey, model, cvText, jobDescription }) {
+export async function extractStories({ apiKey, model, cvText, jobDescription, resources = [] }) {
   const { data } = await call(apiKey, {
     model: PREP_MODEL,
     max_tokens: 16000,
@@ -180,15 +181,15 @@ export async function extractStories({ apiKey, model, cvText, jobDescription }) 
     fallbacks: "default",
     system: `You help a candidate prepare for interviews. From their CV, draft a bank of concrete stories in STAR form (situation, action, result).
 Draft only what the CV supports. Where the CV is vague, keep the draft short and mark what the candidate needs to fill in; the candidate will edit every story in their own words before using it.
-Then, given the job description, list the questions most likely to come up. Respond only with the JSON object.`,
-    messages: [{ role: "user", content: `# CV\n${cvText}\n\n# Job description\n${jobDescription || "(none provided)"}` }],
+Then, given the job description and candidate guidance, list the questions most likely to come up. ${MATERIAL_GUIDANCE} For drafting, guidance selects which CV-supported experience to emphasize; it does not supply invented experience. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `# Candidate guidance and prioritized materials\n${materialsText(resources) || "(none)"}\n\n# CV\n${cvText}\n\n# Job description\n${jobDescription || "(none provided)"}` }],
   }, ["server-side-fallback-2026-07-01"]);
   return data;
 }
 
 // --- Prep: turn a typed interview answer into a story ------------------------
 
-export async function storyFromAnswer({ apiKey, model, question, tag, answer }) {
+export async function storyFromAnswer({ apiKey, model, question, tag, answer, resources = [] }) {
   const { data } = await call(apiKey, {
     model: PREP_MODEL,
     max_tokens: 4000,
@@ -196,8 +197,8 @@ export async function storyFromAnswer({ apiKey, model, question, tag, answer }) 
     fallbacks: "default",
     system: `You turn a candidate's spoken-style answer into a STAR story card for their own notes.
 Keep their words and their facts. Tighten, do not embellish, never add outcomes or numbers they did not state.
-Point out what is missing so they can fill it in. Respond only with the JSON object.`,
-    messages: [{ role: "user", content: `Question (${tag}): ${question}
+Point out what is missing so they can fill it in. ${MATERIAL_GUIDANCE} Use guidance to choose emphasis within the typed answer, not to add unspoken personal facts. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `# Candidate guidance and prioritized materials\n${materialsText(resources) || "(none)"}\n\nQuestion (${tag}): ${question}
 
 Candidate's answer:
 ${answer}` }],
@@ -223,15 +224,15 @@ const GAP_SCHEMA = {
   },
 };
 
-export async function gapReport({ apiKey, model, jobDescription, stories }) {
+export async function gapReport({ apiKey, model, jobDescription, stories, resources = [] }) {
   const bank = stories.map((s) => `- ${s.title} (${s.tags || "no tags"}): ${s.situation.slice(0, 160)}`).join("\n") || "(empty)";
   const { data } = await call(apiKey, {
     model: PREP_MODEL,
     max_tokens: 4000,
     output_config: { format: { type: "json_schema", schema: GAP_SCHEMA } },
     fallbacks: "default",
-    system: `You prepare a candidate for an interview. Given the job description and the titles of their prepared stories, list the questions most likely to come up and, for each, the single story that answers it best, by exact title. Use null when nothing fits well; an honest null is more useful than a stretch. Respond only with the JSON object.`,
-    messages: [{ role: "user", content: `# Job description\n${jobDescription || "(none)"}\n\n# Story bank\n${bank}` }],
+    system: `You prepare a candidate for an interview. Given the job description, candidate guidance and prepared stories, list the questions most likely to come up and, for each, the single story that answers it best, by exact title. ${MATERIAL_GUIDANCE} Prioritize the candidate's expected topics and technical domains in the question list. Use null when nothing fits well; an honest null is more useful than a stretch. Respond only with the JSON object.`,
+    messages: [{ role: "user", content: `# Candidate guidance and prioritized materials\n${materialsText(resources) || "(none)"}\n\n# Job description\n${jobDescription || "(none)"}\n\n# Story bank\n${bank}` }],
   }, ["server-side-fallback-2026-07-01"]);
   const titles = new Set(stories.map((s) => s.title.trim().toLowerCase()));
   return data.questions.map((x) => ({ q: x.q, story: x.story && titles.has(x.story.trim().toLowerCase()) ? x.story : null }));

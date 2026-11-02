@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportProfile, importProfile, exportBank } from "../lib/bank.js";
 
-const cand = { name: "Jane Doe", cvText: "cv", stories: [{ title: "Billing migration", situation: "s", action: "a", result: "r", tags: "impact" }], resources: [{ kind: "linkedin", text: "h" }], secret: "must not travel" };
-const job = { title: "Senior Accountant, Acme", jobDescription: "jd", resources: [{ kind: "company", text: "c" }], likelyQuestions: [{ q: "Why us?", story: null }] };
+const cand = { name: "Jane Doe", cvText: "cv", stories: [{ title: "Billing migration", situation: "s", action: "a", result: "r", tags: "impact" }], resources: [{ kind: "linkedin", text: "h", priority: 2, scope: "candidate" }], secret: "must not travel" };
+const job = { title: "Senior Accountant, Acme", jobDescription: "jd", resources: [{ kind: "notes", text: "Expected domain questions", priority: 5, scope: "job" }], likelyQuestions: [{ q: "Why us?", story: null }] };
 
 test("a candidate or job round-trips through JSON with only its known fields", () => {
   const c = importProfile(exportProfile("candidate", cand));
@@ -29,7 +29,7 @@ test("a malformed file cannot brick the app: wrong value types are coerced or re
   assert.equal(r.data.name, "7");
   assert.equal(r.data.cvText, "");
   assert.deepEqual(r.data.stories, [{ title: "ok", situation: "1", action: "", result: "", tags: "" }], "story fields coerced, missing text defaulted, title-less story dropped");
-  assert.deepEqual(r.data.resources, [{ kind: "other", text: "fine" }]);
+  assert.deepEqual(r.data.resources, [{ kind: "other", text: "fine", priority: 3, scope: "candidate" }]);
   assert.throws(() => importProfile(JSON.stringify({ kind: "candidate", data: { stories: "none" } })), /"stories" must be a list/);
   assert.throws(() => importProfile(JSON.stringify({ kind: "job", data: { likelyQuestions: {} } })), /"likelyQuestions" must be a list/);
   const j = importProfile(JSON.stringify({ kind: "job", data: { title: "T", likelyQuestions: ["Why us?"] } }));
