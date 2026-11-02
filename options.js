@@ -14,6 +14,45 @@ import { checkAssemblyAiKey } from "./stt-assemblyai.js";
 import { checkAnthropicKey } from "./claude.js";
 
 const $ = (id) => document.getElementById(id);
+const statusActivities = new WeakMap();
+
+// Indeterminate activity lasts through the request and its save, without invented progress.
+// Reference counting also keeps a shared status busy until every pending operation settles.
+function beginStatusActivity(status, message) {
+  statusActivities.set(status, (statusActivities.get(status) || 0) + 1);
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  status.setAttribute("aria-atomic", "true");
+  status.setAttribute("aria-busy", "true");
+  status.textContent = message;
+  let finished = false;
+  return () => {
+    if (finished) return;
+    finished = true;
+    const remaining = Math.max(0, (statusActivities.get(status) || 1) - 1);
+    statusActivities.set(status, remaining);
+    status.setAttribute("aria-busy", String(remaining > 0));
+  };
+}
+
+let keyCheckBusy = false;
+async function checkKeyStatus(provider, check, keyField) {
+  if (keyCheckBusy) return;
+  keyCheckBusy = true;
+  const buttons = ["btnTestAnthropic", "btnTestAssemblyai", "btnTestDeepgram"].map($);
+  for (const button of buttons) button.disabled = true;
+  const st = $("keyTest"); st.className = "status";
+  const finish = beginStatusActivity(st, `Checking with ${provider}…`);
+  try {
+    const result = await check($(keyField).value.trim());
+    st.className = result.ok ? "status" : "status error";
+    st.textContent = `${provider}: ${result.reason}`;
+  } catch (e) { st.className = "status error"; st.textContent = e.message; }
+  finally {
+    finish(); keyCheckBusy = false;
+    for (const button of buttons) button.disabled = false;
+  }
+}
 // Chunked so a multi-megabyte PDF does not blow the argument limit of String.fromCharCode.
 function bytesToBase64(bytes) {
   let bin = "";
@@ -36,6 +75,7 @@ function renderProfileLock() {
   $("cDel").disabled ||= Object.keys(profiles.candidates).length <= 1;
   $("jDel").disabled ||= Object.keys(profiles.jobs).length <= 1;
   $("profileBusy").textContent = profileTasks ? "Preparing content. Candidate and job selection will unlock when it is saved." : "";
+  $("profileBusy").setAttribute("aria-busy", String(profileTasks > 0));
 }
 
 // Lock synchronously, before any file read or API request can yield. Hold the lock through
@@ -197,19 +237,33 @@ function renderResources() {
   renderMaterialStatus();
 }
 
+let countedContext = null;
+function contextRequest() {
+  return buildHintRequest({ model: $("model").value, transcript: [], stories, jobDescription: $("jobDescription").value,
+    cvText: $("cvText").value, resources, tier: $("contextTier").value });
+}
+
+function invalidateContextCount() {
+  if (countedContext !== null && countedContext !== JSON.stringify(contextRequest())) {
+    $("ctxStatus").textContent = "Context changed. Count again for updated input tokens.";
+    countedContext = null;
+  }
+}
+
 function renderContext() {
+  invalidateContextCount();
   renderMaterialStatus();
   const rep = contextReport({ stories, cvText: $("cvText").value, jobDescription: $("jobDescription").value, resources, tier: $("contextTier").value });
   const rows = rep.parts.map((p) => p.included
     ? `<tr><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>~${p.tokens.toLocaleString()}</td></tr>`
     : `<tr style="color:var(--muted)"><td>${esc(p.label)}${p.count != null ? ` <small>(${p.count})</small>` : ""}</td><td>not sent at this tier</td></tr>`).join("");
-  const warn = rep.cacheable ? "" : `<tr><td colspan="2" style="color:var(--warn)">Under the ${rep.cacheMin}-token cache minimum: nothing will cache. Add stories, a CV or materials.</td></tr>`;
-  $("ctxTable").innerHTML = `<tr><th>Component</th><th>Tokens (est.)</th></tr>${rows}<tr><th>Total cached prefix</th><th>~${rep.total.toLocaleString()}</th></tr>${warn}`;
+  const warn = rep.cacheable ? "" : `<tr><td colspan="2" style="color:var(--warn)">Below the estimated ${rep.cacheMin}-token cache minimum; caching may not activate. Add context only when it helps the interview.</td></tr>`;
+  $("ctxTable").innerHTML = `<tr><th>Component</th><th>Tokens (est.)</th></tr>${rows}<tr><th>Estimated reusable context</th><th>~${rep.total.toLocaleString()}</th></tr>${warn}`;
   // The Start tab gets one honest line instead of the table.
   const n = stories.filter((s) => s.title?.trim()).length;
   const bits = [`${n} ${n === 1 ? "story" : "stories"}`, $("cvText").value.trim() ? "CV" : "no CV", $("jobDescription").value.trim() ? "job description" : "no job description"];
-  $("ctxTotal").textContent = `The coach will see ${bits.join(", ")}: about ${rep.total.toLocaleString()} tokens per hint, cached after the first.`
-    + (rep.cacheable ? "" : " That is under the cache minimum, so add stories or a CV on the Content tab.");
+  $("ctxTotal").textContent = `The coach will see ${bits.join(", ")}: about ${rep.total.toLocaleString()} tokens of reusable context, with one-hour caching requested. Live transcript and answer tokens are additional.`
+    + (rep.cacheable ? "" : " This may be below the cache minimum.");
   $("ctxTotal").style.color = rep.cacheable && n ? "" : "var(--warn)";
 }
 
@@ -343,6 +397,7 @@ async function saveAndRefresh() {
 let autosaveTimer = null;
 document.addEventListener("change", (e) => { if (e.target.id === "devMode") document.dispatchEvent(new Event("input")); });
 document.addEventListener("input", () => {
+  invalidateContextCount();
   $("saveStatus").className = "status";
   $("saveStatus").textContent = "Saving…";
   clearTimeout(autosaveTimer);
@@ -416,7 +471,7 @@ async function load() {
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (answer.split(/\s+/).length < 15) { st.textContent = "Give a bit more detail (a few sentences)."; return; }
     const q = STANDARD_QUESTIONS[giIndex];
-    st.textContent = "Tidying into a story card…"; $("giSave").disabled = true;
+    const finish = beginStatusActivity(st, "Tidying into a story card…"); $("giSave").disabled = true;
     try {
       const card = await storyFromAnswer({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, question: q.q, tag: q.tag, answer, resources: applyTier({ resources }, $("contextTier").value).resources });
       stories.push({ ...card, source: "interview", interviewTag: q.tag, missing: undefined,
@@ -425,29 +480,30 @@ async function load() {
       renderStories(); renderInterview(); await save(); renderContext();
       st.textContent = `Saved "${card.title}".`;
     } catch (e) { st.textContent = e.message; }
-    finally { $("giSave").disabled = false; }
+    finally { finish(); $("giSave").disabled = false; }
   });
   $("btnClearDiag").onclick = async () => { await chrome.storage.local.set({ diag: [] }); renderDiag(); };
 
   $("btnMic").onclick = async () => {
     const st = $("micStatus");
-    st.textContent = "Requesting…";
+    const finish = beginStatusActivity(st, "Requesting microphone access…"); $("btnMic").disabled = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const label = stream.getAudioTracks()[0]?.label || "microphone";
       stream.getTracks().forEach((t) => t.stop());
       st.textContent = `OK: ${label}. Go back to the coach window and click "Capture my mic".`;
     } catch (e) { st.textContent = `${e.name}: ${e.message}`; }
+    finally { finish(); $("btnMic").disabled = false; }
   };
 
   $("btnGaps").onclick = () => profileTask(async () => {
     const st = $("gapStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!stories.length) { st.textContent = "Add some stories first."; return; }
-    st.textContent = "Asking Claude…"; $("btnGaps").disabled = true;
+    const finish = beginStatusActivity(st, "Finding likely questions with Claude…"); $("btnGaps").disabled = true;
     try { likely = await gapReport({ apiKey: $("anthropicKey").value.trim(), model: $("model").value, jobDescription: $("jobDescription").value, stories, resources: applyTier({ resources }, $("contextTier").value).resources }); renderLikely(); await save(); }
     catch (e) { st.textContent = e.message; }
-    finally { $("btnGaps").disabled = false; }
+    finally { finish(); $("btnGaps").disabled = false; }
   });
   $("btnExport").onclick = () => downloadJson(exportBank(stories, likely), `story-bank-${new Date().toISOString().slice(0, 10)}.json`);
   $("btnImport").onclick = () => $("importFile").click();
@@ -472,27 +528,9 @@ async function load() {
     await serial(load);
     $("saveStatus").textContent = "Saved settings reloaded.";
   };
-  $("btnTestAnthropic").onclick = async () => {
-    const st = $("keyTest");
-    st.className = "status"; st.textContent = "Checking with Anthropic…";
-    const r = await checkAnthropicKey($("anthropicKey").value.trim());
-    st.className = r.ok ? "status" : "status error";
-    st.textContent = `Anthropic: ${r.reason}`;
-  };
-  $("btnTestAssemblyai").onclick = async () => {
-    const st = $("keyTest");
-    st.className = "status"; st.textContent = "Checking with AssemblyAI…";
-    const r = await checkAssemblyAiKey($("assemblyaiKey").value.trim());
-    st.className = r.ok ? "status" : "status error";
-    st.textContent = `AssemblyAI: ${r.reason}`;
-  };
-  $("btnTestDeepgram").onclick = async () => {
-    const st = $("keyTest");
-    st.className = "status"; st.textContent = "Checking with Deepgram…";
-    const r = await checkDeepgramKey($("deepgramKey").value.trim());
-    st.className = r.ok ? "status" : "status error";
-    st.textContent = r.reason;
-  };
+  $("btnTestAnthropic").onclick = () => checkKeyStatus("Anthropic", checkAnthropicKey, "anthropicKey");
+  $("btnTestAssemblyai").onclick = () => checkKeyStatus("AssemblyAI", checkAssemblyAiKey, "assemblyaiKey");
+  $("btnTestDeepgram").onclick = () => checkKeyStatus("Deepgram", checkDeepgramKey, "deepgramKey");
   // Upload: every format ends up as plain text in the textarea, which then autosaves.
   // Only PDFs need Claude (one short Haiku call); DOCX and text are parsed locally.
   $("btnCvUpload").onclick = () => $("cvFile").click();
@@ -502,7 +540,7 @@ async function load() {
     const isPdf = /\.pdf$/i.test(file.name);
     if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first (Start tab), or upload a DOCX/TXT."; return; }
     if (file.size > 8 * 1024 * 1024) { st.textContent = "That file is over 8 MB. Export a smaller PDF or paste the text."; return; }
-    st.textContent = isPdf ? "Reading the PDF with Claude… (a few seconds)" : "Reading…";
+    const finish = beginStatusActivity(st, isPdf ? "Reading the PDF with Claude…" : "Reading the CV…");
     $("btnCvUpload").disabled = true;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -517,7 +555,7 @@ async function load() {
       await save();
       st.textContent = `Loaded ${file.name}: ${text.length.toLocaleString()} characters. Check it reads right, then draft stories.`;
     } catch (e) { st.textContent = e.message; }
-    finally { $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
+    finally { finish(); $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
   });
 
   $("btnAddRes").onclick = () => { resources.push(normalizeMaterial({ kind: "notes", text: "" }, "job")); renderResources(); $("resBox").open = true; };
@@ -527,7 +565,8 @@ async function load() {
     const st = $("resStatus");
     const isPdf = /\.pdf$/i.test(file.name);
     if (isPdf && !$("anthropicKey").value.trim()) { st.textContent = "PDFs are read by Claude: add an Anthropic key first (Start tab)."; return; }
-    st.textContent = isPdf ? "Reading the PDF with Claude…" : "Reading…";
+    const finish = beginStatusActivity(st, isPdf ? "Reading the PDF with Claude…" : "Reading the material…");
+    $("btnResUpload").disabled = true;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const text = await cvTextFromFile({ name: file.name, bytes,
@@ -541,24 +580,35 @@ async function load() {
       await save();
       st.textContent = `Added ${file.name}. Pick what it is in the dropdown.`;
     } catch (e) { st.textContent = e.message; }
-    finally { $("resFile").value = ""; }
+    finally { finish(); $("btnResUpload").disabled = false; $("resFile").value = ""; }
   });
   $("btnCountCtx").onclick = async () => {
+    if ($("btnCountCtx").disabled) return;
     const st = $("ctxStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
-    st.textContent = "Counting…";
+    const finish = beginStatusActivity(st, "Counting context with Claude…"); $("btnCountCtx").disabled = true;
+    let key;
     try {
-      const body = buildHintRequest({ model: $("model").value, transcript: [], stories, jobDescription: $("jobDescription").value, cvText: $("cvText").value, resources, tier: $("contextTier").value });
+      const body = contextRequest(); key = JSON.stringify(body);
       const n = await countHintTokens({ apiKey: $("anthropicKey").value.trim(), body });
-      st.textContent = `Exact: ${n.toLocaleString()} input tokens for a hint request (prefix plus an empty transcript).`;
-    } catch (e) { st.textContent = e.message; }
+      if (key !== JSON.stringify(contextRequest())) {
+        st.textContent = "Context changed while counting. Count again for updated input tokens.";
+        return;
+      }
+      countedContext = key;
+      st.textContent = `API count: ${n.toLocaleString()} input tokens for an empty-transcript hint, including the response format. Live transcript and interview history add tokens. This count does not measure cache hits.`;
+    } catch (e) {
+      st.textContent = key && key !== JSON.stringify(contextRequest())
+        ? "Context changed while counting. Count again for updated input tokens." : e.message;
+    }
+    finally { finish(); $("btnCountCtx").disabled = false; }
   };
 
   $("btnExtract").onclick = () => profileTask(async () => {
     const st = $("extractStatus");
     if (!$("anthropicKey").value.trim()) { st.textContent = "Add an Anthropic key first (Start tab)."; return; }
     if (!$("cvText").value.trim()) { st.textContent = "Upload or paste a CV first."; return; }
-    st.textContent = "Asking Claude… (10-30 s)";
+    const finish = beginStatusActivity(st, "Drafting stories with Claude…");
     $("btnExtract").disabled = true;
     try {
       const out = await extractStories({
@@ -571,6 +621,6 @@ async function load() {
       renderStories(); renderLikely(); renderInterview(); await save(); renderContext();
       st.textContent = `Drafted ${out.stories.length} stories and saved. Edit them until they sound like you.`;
     } catch (e) { st.textContent = e.message; }
-    finally { $("btnExtract").disabled = false; }
+    finally { finish(); $("btnExtract").disabled = false; }
   });
 })();

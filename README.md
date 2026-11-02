@@ -38,7 +38,7 @@ The application supplies the response schema and enforces evidence checks separa
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
 
 ## What the coach knows
-Each live hint receives your enabled coach notes plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" shows the size of each part and whether it is above the cache minimum. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5.
+Each live hint receives your enabled coach notes plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5.
 
 In **Interview guidance and materials**, use **Add interview notes** to tell the coach what
 you expect: likely technical domains, skills worth emphasizing, and links between your work
@@ -63,7 +63,7 @@ story choices and follow-ups while answering the actual question and keeping fac
 | TXT, MD | Read directly | No |
 | .doc, .rtf, .pages, Google Docs | Not readable here: download or save as .docx or PDF first | - |
 
-Whatever the source, the CV becomes compact plain text in Settings, which you can check and edit. Plain text rather than JSON on purpose: a CV has no structure worth the ~30% token overhead, and the structured artefact is the story bank. The text sits in the cached prompt prefix, so it costs full price only on the first hint of a session.
+Whatever the source, the CV becomes plain text in Settings, which you can check and edit. Its dates and responsibilities remain available as evidence alongside the structured story bank. The app requests one-hour caching for the stable prompt prefix. The initial cache write is charged, unchanged context can use cheaper cache reads, and new transcript and answer tokens are billed separately. Changes or cache expiry can require another write.
 
 ## Notes
 - Tab-audio capture works on every OS. Whole-system audio capture only works on Windows and ChromeOS, so tab capture is the default.
