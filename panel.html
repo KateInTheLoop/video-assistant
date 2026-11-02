@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Interview Coach</title>
 <link rel="stylesheet" href="panel.css">
 </head>
@@ -11,28 +12,56 @@
     <button id="btnTab" class="primary">1. Capture call audio</button>
     <button id="btnMic">2. Capture my mic</button>
     <button id="btnStop" disabled>Stop</button>
-    <button id="btnCall" class="small" disabled title="Show or hide the picture of the shared tab">Hide call</button>
     <button id="btnFull" class="small" title="Fill the screen with the call and the coach">Full screen</button>
     <a href="options.html" target="_blank" class="link">Settings</a>
+  </div>
+  <div class="layoutToolbar" aria-label="Display settings">
+    <div class="layoutPresets" role="group" aria-label="Layout preset">
+      <button id="layoutText" class="small" aria-pressed="true">Text-heavy</button>
+      <button id="layoutWhiteboard" class="small" aria-pressed="false">Whiteboard</button>
+      <button id="layoutCurrent" class="small" aria-pressed="false">Current</button>
+    </div>
+    <label class="readingSize">Text
+      <select id="readingSize" aria-label="Reading text size">
+        <option value="14">14 px</option><option value="16" selected>16 px</option>
+        <option value="18">18 px</option><option value="20">20 px</option>
+      </select>
+    </label>
+    <button id="btnCall" class="small" disabled aria-controls="callPane" title="Show or hide the picture without stopping capture">Hide call</button>
+    <button id="btnTranscript" class="small" aria-controls="captions">Hide transcript</button>
+    <button id="btnLayoutReset" class="small" title="Restore this preset's sizes and visible panes">Reset layout</button>
+    <span id="layoutStatus" class="layoutStatus" role="status"></span>
   </div>
   <div id="status" class="status">Ready. Click 1 and pick the meeting's Chrome Tab with "Share tab audio" ticked, then click 2.</div>
 </header>
 
-<main id="stage" class="stage">
+<main id="stage" class="stage liveStage" data-layout="text">
   <!-- The shared tab's picture. A mirror: watch and listen here, but camera, mute and leave
        stay in the real meeting tab. Muted so the call's audio is never played back. -->
-  <section id="callPane" class="callPane" hidden>
-    <video id="callVideo" autoplay muted playsinline></video>
-    <div class="callNote">Mirror of the shared tab. Camera, mute and leave stay in the real meeting.</div>
-  </section>
+  <div id="mediaColumn" class="mediaColumn">
+    <section id="callPane" class="callPane" aria-label="Shared call mirror" hidden>
+      <video id="callVideo" autoplay muted playsinline></video>
+      <div class="callNote">Mirror of the shared tab. Camera, mute and leave stay in the real meeting.</div>
+    </section>
+    <div id="rowDivider" class="splitter rowDivider" role="separator" tabindex="0" aria-label="Resize call and transcript" aria-orientation="horizontal" aria-controls="callPane captions" aria-valuemin="15" aria-valuemax="80" aria-valuenow="26" title="Drag or use Up/Down arrows; double-click to reset" hidden></div>
+    <section id="captions" class="captionPane" aria-label="Transcript">
+      <div class="captionHead">Transcript</div>
+      <section class="pace">
+        <span>You've been talking <b id="talk">0s</b></span>
+        <span id="paceWarn"></span>
+      </section>
+      <section id="transcript" class="transcript" tabindex="0" aria-label="Scrollable transcript"></section>
+    </section>
+  </div>
+  <div id="columnDivider" class="splitter columnDivider" role="separator" tabindex="0" aria-label="Resize call area and coach" aria-orientation="vertical" aria-controls="mediaColumn coach" aria-valuemin="25" aria-valuemax="70" aria-valuenow="50" title="Drag or use Left/Right arrows; double-click to reset"></div>
 
-  <div class="coach">
+  <div id="coach" class="coach">
     <div id="bankWarn" class="banner" hidden>
       Your story bank is empty. Technical notes, CV timelines and prepared resume answers still work; add stories for behavioral examples.
       <a href="options.html" target="_blank">Add your CV and stories in Settings</a> to get hints that point at your own experience.
     </div>
 
-    <section id="hint" class="hint empty">
+    <section id="hint" class="hint empty" tabindex="0" aria-label="Scrollable coach answers and notes">
       <div class="hintTop">
         <div class="qtype" id="qtype"></div>
         <div id="hintState" class="hintState"></div>
@@ -100,13 +129,6 @@
       </div>
       <ol id="questions" class="questions"><li class="qEmpty">Detected questions will appear here. Click one to bring its hint back.</li></ol>
     </section>
-
-    <section class="pace">
-      <span>You've been talking <b id="talk">0s</b></span>
-      <span id="paceWarn"></span>
-    </section>
-
-    <section id="transcript" class="transcript"></section>
   </div>
 </main>
 

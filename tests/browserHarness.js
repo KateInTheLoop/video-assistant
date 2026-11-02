@@ -12,16 +12,19 @@ export async function browserHarness(file, overrides = {}) {
   const nodes = new Map(), listeners = new Map(), timers = new Map();
   let seq = 0;
   function element() {
-    const children = [], selectors = new Map();
+    const children = [], selectors = new Map(), classes = new Set();
     return {
       value: "", textContent: "", checked: false, disabled: false,
-      get innerHTML() { return ""; }, set innerHTML(value) { if (value === "") children.length = 0; },
+      get innerHTML() { return ""; }, set innerHTML(value) { if (value === "") { children.forEach(el => { el.parentElement = null; }); children.length = 0; } },
       setAttribute(name, value) { this[name] = value; }, getAttribute(name) { return this[name] ?? null; },
-      hidden: false, style: {}, dataset: {}, files: [], children,
+      hidden: false, style: { setProperty(name, value) { this[name] = value; } }, dataset: {}, files: [], children,
+      parentElement: null, clientWidth: 1280, clientHeight: 700, scrollHeight: 700, scrollTop: 0,
       get lastChild() { return children.at(-1); },
       options: [{ value: "claude-haiku-5-5" }, { value: "full" }],
-      classList: { add() {}, remove() {}, toggle() {} },
-      append(...els) { children.push(...els); }, appendChild(el) { children.push(el); },
+      classList: { add(...names) { names.forEach(n => classes.add(n)); }, remove(...names) { names.forEach(n => classes.delete(n)); }, contains(name) { return classes.has(name); }, toggle(name, force = !classes.has(name)) { if (force) classes.add(name); else classes.delete(name); return force; } },
+      append(...els) { els.forEach(el => this.appendChild(el)); },
+      appendChild(el) { if (el.parentElement) { const old = el.parentElement.children, index = old.indexOf(el); if (index >= 0) old.splice(index, 1); } children.push(el); el.parentElement = this; return el; },
+      getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight }; },
       querySelector(sel) { if (!selectors.has(sel)) selectors.set(sel, element()); return selectors.get(sel); },
       querySelectorAll() { return []; }, click() {}, scrollIntoView() {},
       focus() { globals.document.activeElement = this; },
