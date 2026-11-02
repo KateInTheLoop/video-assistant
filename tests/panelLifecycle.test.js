@@ -289,7 +289,9 @@ test("a prepared resume answer appears verbatim immediately without a Claude rew
   const text = "  I have over twelve years of reporting experience.\n\nCurrently I support close activities.\nEarlier I worked in operations.  ";
   let calls = 0;
   const h = await panelHarness({ loadSettings: async () => ({ deepgramKey: "example", stories: [],
-    cvText: "Analyst January 2020 - December 2022\nExample Company\n- Supported reporting", resources: [{ kind: "resume_summary", scope: "job", text }] }),
+    cvText: "Analyst January 2020 - December 2022\nExample Company\n- Supported reporting", resources: [
+      { kind: "notes", priority: 5, text: "Synthetic technical notes ".repeat(2000) },
+      { kind: "resume_summary", scope: "job", priority: 1, text }] }),
     getHint: async () => { calls++; throw new Error("A prepared answer must not require Claude"); },
   });
   await h.$("btnMic").onclick();

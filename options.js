@@ -176,13 +176,14 @@ function renderMaterialStatus() {
       : !entry ? "Excluded by context tier — choose Everything to include this material"
       : entry.status === "superseded" ? "Another prepared resume answer is selected — change priorities or set the other answer to Off"
       : resource.kind === "resume_summary" && entry.status === "truncated" ? `AI receives an excerpt (${entry.sentChars.toLocaleString()} of ${resource.text.length.toLocaleString()} characters). The coach displays your full saved answer for a resume walkthrough.`
+      : resource.kind === "resume_summary" && entry.status === "omitted" ? "AI context budget omits this answer. The coach still displays your full saved answer for a resume walkthrough."
       : entry.status === "truncated" ? `Partially included (${entry.sentChars.toLocaleString()} characters) — shorten this material or lower other priorities`
       : entry.status === "omitted" ? "Not included — other materials fill the context budget"
       : "Included in AI context";
   }
   const active = eligible.filter(r => r.text?.trim()).length;
   const included = plan.entries.filter(e => ["included", "truncated"].includes(e.status)).length;
-  $("resBudget").textContent = `${included} of ${active} enabled material${active === 1 ? "" : "s"} included in AI context. Coach notes and resume summaries are available in every context tier unless set to Off. The selected resume summary is reserved first; remaining materials follow priority order.`
+  $("resBudget").textContent = `${included} of ${active} enabled material${active === 1 ? "" : "s"} included in AI context. Coach notes and resume summaries are available in every context tier unless set to Off. AI context follows priority order; resume walkthroughs display your full saved answer locally.`
     + (plan.truncated ? " Some material is shortened or omitted; see the status on each card." : "");
 }
 

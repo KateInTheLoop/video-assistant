@@ -69,16 +69,17 @@ test("the original selected wording is preserved and competing answers are super
   assert.deepEqual(resources, before);
 });
 
-test("Must focus notes and background cannot crowd out the selected prepared answer", () => {
+test("a lower-priority summary cannot displace Must focus guidance and remains available locally", () => {
   const selected = answer("I started in customer operations and grew into a reporting role.", { priority: 1 });
   const notes = { kind: "notes", scope: "job", priority: 5, text: "Expected topics: " + "x".repeat(MAX_MATERIALS_CHARS) };
   const background = { kind: "company", priority: 5, text: "Background: " + "y".repeat(MAX_MATERIALS_CHARS) };
   const plan = materialPlan([notes, background, selected], 400);
-  assert.equal(plan.entries[0].resource, selected);
-  assert.equal(plan.preparedResume.status, "included");
-  assert.equal(plan.preparedResume.complete, true);
-  assert.ok(plan.text.includes(selected.text));
-  assert.ok(plan.text.indexOf(selected.text) < plan.text.indexOf("Expected topics:"));
+  assert.equal(plan.entries[0].resource, notes);
+  assert.equal(plan.preparedResume.status, "omitted");
+  assert.equal(plan.preparedResume.complete, false);
+  assert.doesNotMatch(plan.text, /I started in customer operations/);
+  assert.equal(preparedResume([notes, background, selected]), selected);
+  assert.equal(plan.preparedResume.resource.text, selected.text);
   assert.equal(plan.entries.find(entry => entry.resource === notes).status, "truncated");
   assert.equal(plan.entries.find(entry => entry.resource === background).status, "omitted");
 });
@@ -114,7 +115,7 @@ test("selected prepared guidance reaches live and cached prompts in every tier",
     const request = buildHintRequest(input), prewarm = buildPrewarmRequest(input);
     const prompt = request.system.at(-1).text;
     assert.ok(prompt.includes(selected.text));
-    assert.ok(prompt.indexOf(selected.text) < prompt.indexOf("Interview guidance"));
+    assert.ok(prompt.indexOf("Interview guidance") < prompt.indexOf(selected.text), "coach notes retain their priority in AI context");
     assert.doesNotMatch(prompt, /Candidate's generic opening|Disabled prepared answer/);
     if (tier !== "full") assert.doesNotMatch(prompt, /Background company context/);
     assert.deepEqual(prewarm.system, request.system);
