@@ -4,6 +4,12 @@ Live captions for a video interview plus structure hints grounded in the candida
 Experience questions receive short cues grounded in your own stories and CV. Technical knowledge questions receive concise factual explanations and examples from the model's general knowledge, calibrated to the CV and job. They work without a matching story, including with an empty story bank.
 The optional "answer shape" panel names what a strong answer covers and the follow-ups to expect; it never writes words to read aloud.
 
+"Walk me through your resume" opens a career walkthrough: opening overview cues and every
+dated CV role, oldest to newest, with a role slider, Previous/Next, direct role selection,
+and an option to reverse the order. Role dates, employers and duties come directly from the
+uploaded CV, independently of the model's story shortlist. The timeline appears before the
+model finishes its overview. An unrecognized CV layout shows the source text for review.
+
 ## Install (developer mode)
 1. `chrome://extensions` → enable Developer mode → Load unpacked → pick this folder.
 2. Click the extension icon → the coach opens as its own window. Drag it to the second monitor.
@@ -31,10 +37,17 @@ Whatever the source, the CV becomes compact plain text in Settings, which you ca
 
 ## Notes
 - Tab-audio capture works on every OS. Whole-system audio capture only works on Windows and ChromeOS, so tab capture is the default.
-- Speech to text is Deepgram Nova-3 by default (robust to accents, ~300 ms); AssemblyAI Universal-Streaming is available as an alternative/backup provider, selectable in Settings. Claude Opus 5.5 produces the hints with a structured JSON schema.
+- Speech to text uses Deepgram Nova-3 by default; AssemblyAI Universal-Streaming is available as an alternative provider in Settings. Live hints use the selected Claude model (Haiku by default); preparation and debriefs use Opus.
 - Audio goes to the selected speech provider (Deepgram or AssemblyAI). Anthropic receives recent transcript text and the context selected by your tier for live hints; the full transcript and story titles for the debrief; and the CV, job description, typed answer or PDF needed for preparation. DOCX, ODT and text files are parsed locally. Keys and saved transcripts remain in local extension storage.
 
 ## Developer mode
+
+Deepgram captions use interim results, `no_delay=true` and roughly 50 ms audio batches.
+Live words are marked **live** and update independently of hint generation. No-delay mode
+can return less polished number/date formatting. Saved sessions include median/p95 interim
+audio-cursor backlog and caption-update duration; these estimates are not total speech-to-screen
+latency. Developer traces include `caption.update` samples to help distinguish provider backlog
+from local UI work.
 
 Settings → Diagnostics → Developer mode. The coach window then logs trace points to its console
 (right-click the window → Inspect): each caption, scheduler decision, hint request, first token,

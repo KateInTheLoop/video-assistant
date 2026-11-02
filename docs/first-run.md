@@ -46,6 +46,10 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
 ## 4. During the call
 - The big line is the question, restated. Technical questions show factual **Technical notes**, including explanations and small examples. Experience questions show up to three of your stories with cues and up to six keywords.
 - **Used this story** confirms that you actually drew on a suggested story. Unconfirmed suggestions do not count as used.
+- "Walk me through your resume" opens the complete **Career walkthrough**: an opening overview,
+  all dated roles from the CV, a slider and Previous/Next buttons. Click any role to jump to it;
+  use the Order dropdown to switch between oldest-first and newest-first. Read the first few
+  responsibilities on each card and open **More from this role** for the remaining CV details.
 - Keywords are prompts for your own words, never a script. Look at them, then look back at the camera.
 - The talk timer warns at 90 seconds and again at two minutes.
 - "follow-up, same story" means stay on the story you were telling.

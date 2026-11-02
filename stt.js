@@ -1,4 +1,5 @@
 import { backoffDelays } from "./lib/backoff.js";
+import { interimBacklogMs } from "./lib/sttLatency.js";
 
 // A WebSocket error carries no status code, so when the socket fails we ask the REST API
 // with the same key to find out whether it is the key, the account, or the network.
@@ -65,6 +66,9 @@ export class SttStream {
       channels: "1",
       interim_results: "true",
       smart_format: "true",
+      // Smart formatting otherwise waits for some incomplete entities (up to 3s silence).
+      // Fast captions take priority over perfectly formatted dates/currency sequences.
+      no_delay: "true",
       punctuate: "true",
       endpointing: "300",
       utterance_end_ms: "1200",
@@ -80,6 +84,7 @@ export class SttStream {
         reject(new Error(`Deepgram connection failed (${this.speaker}). ${probe.reason}`));
       };
     });
+    this.sentAudioSeconds = 0; // server timestamps restart on each connection
 
     this.ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
@@ -89,7 +94,7 @@ export class SttStream {
         const text = alt?.transcript?.trim();
         if (!text) return;
         if (msg.is_final) this.onFinal({ speaker: this.speaker, text, speechFinal: msg.speech_final });
-        else this.onInterim({ speaker: this.speaker, text });
+        else this.onInterim({ speaker: this.speaker, text, backlogMs: interimBacklogMs(this.sentAudioSeconds, msg) });
       } else if (msg.type === "UtteranceEnd") {
         this.onUtteranceEnd({ speaker: this.speaker });
       } else if (msg.type === "Error") {
@@ -124,7 +129,10 @@ export class SttStream {
     const src = this.ctx.createMediaStreamSource(mediaStream);
     const node = new AudioWorkletNode(this.ctx, "pcm-worklet");
     node.port.onmessage = (e) => {
-      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(e.data);
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(e.data);
+        this.sentAudioSeconds += e.data.byteLength / (2 * this.sampleRate); // mono PCM16
+      }
     };
     src.connect(node);
     // Worklet needs a destination to run; a muted gain keeps the graph alive without playback.

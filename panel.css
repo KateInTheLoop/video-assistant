@@ -64,7 +64,7 @@ button:disabled { opacity: .45; cursor: default; }
 .line .who { font-weight: 600; margin-right: 6px; }
 .line.interviewer .who { color: var(--interviewer); }
 .line.candidate .who { color: var(--candidate); }
-.line.interim { opacity: .55; font-style: italic; }
+.line.interim { opacity: 1; font-style: normal; border-left: 2px dashed var(--muted); padding-left: 8px; }
 
 /* Hint card header: type on the left, live state (Analysing / error) on the right */
 .hintTop { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
@@ -133,3 +133,15 @@ button.small { font-size: 12px; padding: 5px 10px; min-height: 0; text-transform
 .technicalNotes { margin: 12px 0; line-height: 1.5; }
 .technicalNotes ul { margin: 6px 0; padding-left: 22px; }
 .technicalNotes li { margin-bottom: 6px; }
+.careerWalkthrough { margin: 14px 0; line-height: 1.45; }
+.careerWalkthrough p { margin: 8px 0; }
+.careerWalkthrough ul { margin: 8px 0; padding-left: 22px; }
+.careerControls { display: flex; gap: 8px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+.careerControls input { flex: 1; min-width: 90px; }
+.careerRoles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.careerRoles button { font-size: 12px; text-align: left; }
+.careerRoles button[aria-current="step"] { outline: 2px solid var(--accent, #7aa2ff); }
+#careerRole { border-left: 3px solid var(--accent, #7aa2ff); padding: 4px 12px; }
+#careerRole h3 { margin: 0 0 6px; }
+.careerSource { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font: inherit; }
+.hint:has(.careerWalkthrough:not([hidden])) { max-height: 65vh; flex: 0 1 auto; }

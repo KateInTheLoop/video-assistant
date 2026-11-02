@@ -193,6 +193,7 @@ async function renderSessions() {
     let html = `<b>${esc(when)}</b> · ${mins} min${paceLine}`;
     const context = [s.candidateName, s.jobTitle].filter(Boolean).map(esc).join(" · ");
     if (context) html += `<p>${context}</p>`;
+    if (s.captions?.samples) html += `<p><small>Deepgram interim backlog: median ${esc(s.captions.medianBacklogMs)} ms, p95 ${esc(s.captions.p95BacklogMs)} ms; maximum caption update ${esc(s.captions.maxRenderMs)} ms. Audio-cursor estimate, not total speech-to-screen latency.</small></p>`;
     if (s.recovered) html += "<p><small>Recovered after an interrupted call. No automatic debrief was uploaded.</small></p>";
     if (s.debrief) {
       html += `<p><b>Overall.</b> ${esc(s.debrief.overall)}</p><p><b>Practise next:</b> ${esc(s.debrief.top_fix)}</p>`;

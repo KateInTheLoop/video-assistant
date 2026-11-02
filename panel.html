@@ -38,6 +38,27 @@
         <div id="hintState" class="hintState"></div>
       </div>
       <div class="question" id="question">Waiting for a question…</div>
+      <section id="careerWalkthrough" class="careerWalkthrough" hidden>
+        <b>Career walkthrough</b>
+        <p id="careerSummary"></p>
+        <ul id="careerOverview"></ul>
+        <div class="careerControls">
+          <label for="careerOrder">Order</label>
+          <select id="careerOrder"><option value="oldest">Oldest → newest</option><option value="newest">Newest → oldest</option></select>
+        </div>
+        <div class="careerControls">
+          <button id="careerPrev">Previous role</button>
+          <input id="careerSlider" type="range" min="0" max="0" value="0" aria-label="Choose career role">
+          <button id="careerNext">Next role</button>
+        </div>
+        <p id="careerProgress" aria-live="polite"></p>
+        <article id="careerRole"></article>
+        <details>
+          <summary id="careerAllRoles">All roles</summary>
+          <nav id="careerRoles" class="careerRoles" aria-label="Career roles"></nav>
+        </details>
+        <p id="careerClose">Close by connecting the relevant experience to this job. Explain transitions in your own words.</p>
+      </section>
       <section id="technicalNotes" class="technicalNotes" hidden>
         <b>Technical notes</b>
         <ul id="technicalPoints"></ul>
