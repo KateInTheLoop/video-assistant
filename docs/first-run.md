@@ -50,6 +50,18 @@ _Screenshot placeholder: Chrome share picker with Chrome Tab selected and the au
 Wear headphones. Without them the mic hears the interviewer through your speakers and their words show up as yours.
 
 ## 4. During the call
+- **Questions → Automatic** detects questions as before. Choose **Manual** if background
+  speech is producing unwanted questions: captions continue, but coaching starts only for
+  questions you capture. Click **Capture question** or press **Space** in the focused coach
+  window to capture the latest interviewer utterance. Space respects typing and native
+  controls. Click a transcript line, or select just the question text and use Space/the
+  button, to coach that exact selection. The mode is remembered across coach windows.
+- Question cards have colored, labeled states: **New** (blue), **Answering** (green),
+  **Postponed** (amber), and **Skipped** (gray). Use **Answer now**, **Postpone**, or **Skip**
+  directly on a card. **Done** marks it answered; **Answer now** resumes a postponed/skipped
+  card. Captures appear before coaching is ready, and late hints keep your selected card.
+  If coaching fails, use **Retry coaching** on the card or hint. **Done** remains separate,
+  so you can finish an answer without retrying. Queue updates preserve keyboard focus.
 - Choose **Text-heavy**, **Whiteboard**, or **Current** in the coach header. Text-heavy starts
   with a small call above the transcript and a wide answer column. Whiteboard enlarges the
   shared picture; Current keeps the previous arrangement. Drag dividers in wide windows,

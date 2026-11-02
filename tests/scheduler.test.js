@@ -43,3 +43,45 @@ test("fillers never schedule; candidate speaking clears pending", () => {
   s.onCandidateSpeaks();
   assert.equal(s.onUtteranceEnd(2000), null);
 });
+
+test("explicit capture bypasses automatic delay but never overlaps an active request", () => {
+  const scheduler = new HintScheduler();
+  assert.equal(scheduler.takeManual("First selected question", 0), "First selected question");
+  assert.equal(scheduler.takeManual("Second selected question", 1), null);
+  scheduler.done(10);
+  assert.equal(scheduler.takeManual("Second selected question", 11), "Second selected question");
+});
+
+test("queued automatic work retains its own capture identity across delayed requests", () => {
+  const scheduler = new HintScheduler();
+  scheduler.onInterviewerFinal({ text: "First question?", speechFinal: true, captureKey: "turn:1" }, 0);
+  assert.equal(scheduler.take(0), "First question?");
+  scheduler.onInterviewerFinal({ text: "A queued question?", speechFinal: true, captureKey: "turn:2" }, 100);
+  assert.equal(scheduler.takenCaptureKey, "turn:1");
+  scheduler.done(3000);
+  assert.equal(scheduler.take(3000), "A queued question?");
+  assert.equal(scheduler.takenCaptureKey, "turn:2");
+});
+
+test("same-turn fragments retain a key and mixed-turn batches cannot alias a single turn", () => {
+  const scheduler = new HintScheduler();
+  scheduler.onInterviewerFinal({ text: "Explain", captureKey: "turn:1" }, 0);
+  scheduler.onInterviewerFinal({ text: "queue retries?", captureKey: "turn:1" }, 50);
+  assert.equal(scheduler.take(100), "Explain queue retries?");
+  assert.equal(scheduler.takenCaptureKey, "turn:1");
+  scheduler.done(150);
+  scheduler.onInterviewerFinal({ text: "Second question?", captureKey: "turn:2" }, 200);
+  scheduler.onInterviewerFinal({ text: "Third question?", captureKey: "turn:3" }, 300);
+  scheduler.take(3000);
+  assert.equal(scheduler.takenCaptureKey, null);
+});
+
+test("discarding pending speech also discards its capture identity", () => {
+  const scheduler = new HintScheduler();
+  scheduler.onInterviewerFinal({ text: "An abandoned question?", captureKey: "turn:1" }, 0);
+  scheduler.onCandidateSpeaks();
+  assert.equal(scheduler.pendingCaptureKey, null);
+  scheduler.onInterviewerFinal({ text: "A fresh question?", captureKey: "turn:2" }, 100);
+  scheduler.take(100);
+  assert.equal(scheduler.takenCaptureKey, "turn:2");
+});

@@ -8,7 +8,7 @@ import { HintScheduler } from "./lib/scheduler.js";
 import { validateHint } from "./lib/hintSchema.js";
 import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
-import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
+import { shouldSupersede, queueOrder, settleAnswering } from "./lib/questionQueue.js";
 import { createTrace, formatTrace } from "./lib/trace.js";
 import { callTracks } from "./lib/callView.js";
 import { createPanelLayout } from "./lib/panelLayout.js";
@@ -19,6 +19,7 @@ import { topicTimeline, topicMatches, experienceDuration, quoteFromRole } from "
 import { tierIncludes, materialOwner } from "./lib/context.js";
 import { preparedResume } from "./lib/preparedResume.js";
 import { captionSummary } from "./lib/sttLatency.js";
+import { QUESTION_MODE_KEY, questionMode, captureText, sameCapture, QuestionCaptureBuffer, captureShortcut } from "./lib/questionCapture.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -37,6 +38,7 @@ const ui = {
   careerAllRoles: $("careerAllRoles"),
   resumeAnswerBox: $("resumeAnswerBox"), resumeAnswerScope: $("resumeAnswerScope"), resumeAnswerText: $("resumeAnswerText"), careerDetails: $("careerTimelineDetails"),
   careerTitle: $("careerTitle"), experienceDuration: $("experienceDuration"), experienceExamples: $("experienceExamples"), experienceStories: $("experienceStories"),
+  questionMode: $("questionMode"), captureQuestion: $("btnCaptureQuestion"), captureNotice: $("questionCaptureNotice"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -53,9 +55,16 @@ let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
 let interimNodes = {};
+let renderedTranscript = null;
+const transcriptRows = new Map(), heldTranscriptRows = new Set();
+let transcriptPointer = null, transcriptRefreshFrame = 0;
 let captionSamples = [];
 let scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
+let captureMode = "auto", captureModeVersion = 0, questionInteraction = 0;
+let manualRequests = [];
+let modeSaveFailed = false;
+const questionCapture = new QuestionCaptureBuffer();
 let lastHint = null;                 // last validated hint, so follow-ups keep the same story
 let talkStart = null, talkTimer = null;
 let lastCandidateAt = 0;             // last time the candidate's mic produced speech
@@ -74,29 +83,86 @@ function setStatus(msg, isError = false) {
 
 // --- Transcript rendering --------------------------------------------------
 
+function protectedTranscriptRow(el) {
+  if (transcriptPointer?.el === el) return true;
+  const selection = window.getSelection?.();
+  return !!selectedTranscriptText() && (selection.containsNode?.(el, true)
+    || el.contains?.(selection.anchorNode) || el.contains?.(selection.focusNode));
+}
+
+function retainTranscriptRow(el) {
+  return protectedTranscriptRow(el) || el.contains?.(document.activeElement);
+}
+
+function followingTranscript() {
+  return !transcriptPointer && !selectedTranscriptText()
+    && ui.transcript.scrollHeight - ui.transcript.scrollTop - ui.transcript.clientHeight <= 16;
+}
+
+function updateTranscriptRow(row, text) {
+  // A selected live/merged row is a stable excerpt until the reader clears it.
+  // Other rows continue rendering and the underlying transcript keeps recording.
+  if (protectedTranscriptRow(row.el) || row.text.nodeValue === text) return;
+  row.text.nodeValue = text;
+  row.el.dataset.captureText = text;
+}
+
 function renderTranscript() {
-  ui.transcript.innerHTML = "";
-  interimNodes = {};
-  const lines = transcript.slice(-60);
-  for (const l of lines) ui.transcript.appendChild(lineEl(l.speaker, l.text, false));
-  for (const sp of ["interviewer", "candidate"]) {
-    renderInterim(sp);
+  const follow = followingTranscript();
+  if (renderedTranscript !== transcript) {
+    ui.transcript.innerHTML = "";
+    transcriptRows.clear(); heldTranscriptRows.clear(); interimNodes = {};
+    transcriptPointer = null;
+    renderedTranscript = transcript;
   }
-  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  if (transcriptPointer) { renderCaptureControls(); return; }
+  for (const el of heldTranscriptRows) if (!retainTranscriptRow(el)) { el.remove(); heldTranscriptRows.delete(el); }
+  for (const speaker of ["interviewer", "candidate"]) {
+    const node = interimNodes[speaker];
+    if (node && !interim[speaker]) {
+      if (retainTranscriptRow(node.el)) heldTranscriptRows.add(node.el);
+      else node.el.remove();
+      delete interimNodes[speaker];
+    }
+  }
+  const lines = transcript.slice(-60);
+  const retained = new Set(lines);
+  for (const [line, row] of transcriptRows) if (!retained.has(line) && !retainTranscriptRow(row.el)) { row.el.remove(); transcriptRows.delete(line); }
+  const live = Array.from(ui.transcript.children).find(el => heldTranscriptRows.has(el) || Object.values(interimNodes).some(node => node.el === el));
+  for (const line of lines) {
+    let row = transcriptRows.get(line);
+    if (!row) {
+      const el = lineEl(line.speaker, line.text, false);
+      row = { el, text: el.lastChild };
+      transcriptRows.set(line, row);
+      ui.transcript.insertBefore(el, live || null);
+    } else updateTranscriptRow(row, line.text);
+  }
+  for (const sp of ["interviewer", "candidate"]) {
+    renderInterim(sp, false);
+  }
+  if (follow) ui.transcript.scrollTop = ui.transcript.scrollHeight;
   ui.save.disabled = transcript.length === 0;
+  renderCaptureControls();
 }
 
 // Interim words update one node immediately. Rebuilding all 60 history rows on every
 // partial result made fast captions unnecessarily expensive while hints were streaming.
-function renderInterim(speaker) {
-  if (!interim[speaker]) return;
+function renderInterim(speaker, follow = followingTranscript()) {
+  if (!interim[speaker] || transcriptPointer) return;
   let node = interimNodes[speaker];
   if (!node) {
     const el = lineEl(speaker, interim[speaker], true);
     node = interimNodes[speaker] = { el, text: el.lastChild };
     ui.transcript.appendChild(el);
-  } else node.text.nodeValue = interim[speaker];
-  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  } else updateTranscriptRow(node, interim[speaker]);
+  if (follow) ui.transcript.scrollTop = ui.transcript.scrollHeight;
+}
+
+function refreshTranscriptAfterInteraction() {
+  if (transcriptRefreshFrame) cancelAnimationFrame(transcriptRefreshFrame);
+  // Let a row/button click consume its original text before applying buffered edits.
+  transcriptRefreshFrame = requestAnimationFrame(() => { transcriptRefreshFrame = 0; renderTranscript(); });
 }
 
 function lineEl(speaker, text, isInterim) {
@@ -108,7 +174,123 @@ function lineEl(speaker, text, isInterim) {
   if (isInterim) who.textContent += " · live";
   el.appendChild(who);
   el.appendChild(document.createTextNode(text));
+  el.dataset.captureText = text;
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  el.title = "Click to capture this as a question, or select text and press Space";
+  el.onclick = () => {
+    if (!selectedTranscriptText()) captureQuestion(el.dataset.captureText, { source: "transcript" });
+  };
+  el.onkeydown = event => {
+    if (!["Enter", " "].includes(event.key) || event.repeat) return;
+    event.preventDefault(); event.stopPropagation();
+    captureQuestion(selectedTranscriptText() || el.dataset.captureText, { source: "transcript" });
+  };
   return el;
+}
+
+// --- Explicit question capture ---------------------------------------------
+
+function selectedTranscriptText() {
+  const selection = window.getSelection?.();
+  return selection && ui.transcript.contains?.(selection.anchorNode) && ui.transcript.contains?.(selection.focusNode)
+    ? captureText(selection.toString()) : "";
+}
+
+function renderCaptureControls() {
+  ui.questionMode.value = captureMode;
+  ui.captureQuestion.disabled = sessionStart === null || !(selectedTranscriptText() || questionCapture.snapshot()?.text);
+  const label = captureMode === "manual" ? "Capture question · Space" : "Capture question";
+  if (ui.captureQuestion.textContent !== label) ui.captureQuestion.textContent = label;
+  const notice = (captureMode === "manual"
+    ? "Manual questions: captions stay live. Capture with Space in this window, or click a transcript line."
+    : "Automatic questions. Use the capture button, click a transcript line, or select transcript text and press Space.")
+    + (modeSaveFailed ? " Mode applies to this window; saving is unavailable." : "");
+  if (ui.captureNotice.textContent !== notice) ui.captureNotice.textContent = notice;
+  ui.captureNotice.classList.toggle("saveError", modeSaveFailed);
+  ui.captureQuestion.setAttribute("aria-keyshortcuts", captureMode === "manual" ? "Space" : "");
+}
+
+function setCaptureMode(value) {
+  captureMode = questionMode(value);
+  captureModeVersion++;
+  scheduler.clearPending();
+  clearTimeout(hintTimer);
+  if (partialFrame) cancelAnimationFrame(partialFrame);
+  partialFrame = 0; pendingPartial = null;
+  try { localStorage.setItem(QUESTION_MODE_KEY, captureMode); modeSaveFailed = false; }
+  catch { modeSaveFailed = true; }
+  if (selectedId !== null) renderQuestion(questions.find(q => q.id === selectedId));
+  else clearHintCard();
+  renderCaptureControls();
+  if (manualRequests.length) schedule({ fireInMs: 0 });
+}
+
+function captureLatestQuestion() {
+  const selected = selectedTranscriptText();
+  const latest = questionCapture.snapshot();
+  return captureQuestion(selected || latest?.text, { source: selected ? "transcript" : "manual", key: selected ? null : latest?.key });
+}
+
+function capturedQuestionHint(text) {
+  return { is_question: true, follow_up: false, question_type: "none", question_summary: text.split(/\s+/).slice(0, 14).join(" "), stories: [], keywords: [], watch_out: "" };
+}
+
+function captureQuestion(text, { source = "manual", key = null } = {}) {
+  text = captureText(text);
+  if (sessionStart === null || !text) return null;
+  const latest = questionCapture.snapshot();
+  if (!key && latest?.text === text) key = latest.key;
+  questionInteraction++;
+  // Cancel unsent/obsolete automatic work, retaining the one-request-at-a-time gate.
+  captureModeVersion++;
+  scheduler.clearPending(); clearTimeout(hintTimer);
+  if (partialFrame) cancelAnimationFrame(partialFrame);
+  partialFrame = 0; pendingPartial = null;
+  const existing = questions.find(q => (key && q.captureKey === key) || q.rawText === text);
+  if (existing) {
+    const changed = !sameCapture(existing.rawText, text);
+    existing.explicit = true; existing.source = source;
+    existing.rawText = text; existing.captureKey ||= key;
+    existing.analysis ||= "ready";
+    if (changed) { existing.captureRevision = (existing.captureRevision || 0) + 1; existing.analysis = "queued"; existing.partialHint = null; existing.hint = capturedQuestionHint(text); }
+    if (["later", "dismissed", "answered"].includes(existing.status)) existing.status = "new";
+    selectQuestion(existing); queueCapturedHint(existing); return existing;
+  }
+  const q = { id: ++qSeq, at: Date.now(), source, explicit: true, captureKey: key, rawText: text, status: "new", analysis: "queued",
+    hint: capturedQuestionHint(text) };
+  settleAnswering(questions, { lastCandidateAt });
+  questions.push(q); selectedId = q.id;
+  manualRequests.push(q.id);
+  renderQueue({ revealSelected: true }); renderQuestion(q);
+  trace.mark("question.capture", { source, id: q.id, chars: text.length });
+  void requestHint();
+  return q;
+}
+
+function renderQuestion(q) {
+  if (!q) return clearHintCard();
+  const unfinished = q.analysis && q.analysis !== "ready";
+  renderHint(q.partialHint || q.hint, { partial: !!unfinished });
+  if (q.explicit) {
+    ui.question.textContent = q.rawText;
+    if (unfinished) ui.qtype.textContent = "Captured question";
+    ui.hintActions.hidden = false;
+  }
+  if (unfinished) setHintState(sessionStart === null ? "Capture stopped. This question is kept in the queue." : q.analysis === "error" ? "Coaching failed. Choose Retry coaching." : q.analysis === "loading" ? "Analysing…" : q.status === "later" ? "Postponed. Choose Answer now for coaching." : "Waiting for coaching…", q.analysis === "error");
+}
+
+function selectQuestion(q) {
+  questionInteraction++;
+  selectedId = q.id;
+  renderQueue({ revealSelected: true }); renderQuestion(q);
+}
+
+function queueCapturedHint(q) {
+  if (sessionStart === null || !q.explicit || q.analysis === "ready" || q.analysis === "loading") return;
+  if (!manualRequests.includes(q.id)) manualRequests.push(q.id);
+  q.analysis = "queued";
+  void requestHint();
 }
 
 // --- Speech events -----------------------------------------------------------
@@ -117,8 +299,10 @@ function onInterim({ speaker, text, backlogMs = null }) {
   const t0 = performance.now();
   if (interim[speaker] === null) trace.mark("stt.interim.start", { speaker });
   interim[speaker] = text;
+  questionCapture.speech({ speaker, text });
   if (speaker === "candidate") { lastCandidateAt = Date.now(); scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
   renderInterim(speaker);
+  renderCaptureControls();
   const renderMs = Math.round((performance.now() - t0) * 100) / 100;
   captionSamples.push({ backlogMs, renderMs });
   if (captionSamples.length > 200) captionSamples.shift();
@@ -128,19 +312,24 @@ function onInterim({ speaker, text, backlogMs = null }) {
 function onFinal({ speaker, text, speechFinal }) {
   trace.mark("stt.final", { speaker, chars: text.length, speechFinal: !!speechFinal });
   interim[speaker] = null;
+  questionCapture.speech({ speaker, text, final: true, speechFinal });
   mergeFinal(transcript, { speaker, text });
   checkpointTranscript();
   renderTranscript();
 
   if (speaker === "interviewer") {
     stopTalkClock();
-    schedule(scheduler.onInterviewerFinal({ text, speechFinal }, Date.now()));
+    const captureKey = questionCapture.snapshot()?.key || null;
+    if (captureMode === "auto" && !questions.some(q => q.explicit && q.captureKey === captureKey)) schedule(scheduler.onInterviewerFinal({ text, speechFinal, captureKey }, Date.now()));
   }
 }
 
 function onUtteranceEnd({ speaker }) {
   trace.mark("stt.utteranceEnd", { speaker });
-  if (speaker === "interviewer") schedule(scheduler.onUtteranceEnd(Date.now()));
+  if (speaker === "interviewer") {
+    questionCapture.end();
+    if (captureMode === "auto" && !questions.some(q => q.explicit && q.captureKey === questionCapture.snapshot()?.key)) schedule(scheduler.onUtteranceEnd(Date.now()));
+  }
 }
 
 function schedule(plan) {
@@ -177,10 +366,17 @@ function prewarm(reason) {
 
 // Partial hints arrive on every streamed token (~80 per hint). Render at most once per frame.
 let pendingPartial = null, partialFrame = 0;
-function renderPartial(h) {
-  pendingPartial = h;
+function renderPartial(h, { canShow = () => true, target = null } = {}) {
+  pendingPartial = { hint: h, canShow, target };
   if (partialFrame) return;
-  partialFrame = requestAnimationFrame(() => { partialFrame = 0; if (pendingPartial) renderHint(pendingPartial, { partial: true }); pendingPartial = null; });
+  partialFrame = requestAnimationFrame(() => {
+    partialFrame = 0;
+    const partial = pendingPartial; pendingPartial = null;
+    if (partial?.canShow()) {
+      if (partial.target) renderQuestion(partial.target);
+      else renderHint(partial.hint, { partial: true });
+    }
+  });
 }
 
 async function requestHint() {
@@ -188,12 +384,33 @@ async function requestHint() {
   if (sessionStart === null) return;
   const version = sessionVersion;
   const hintScheduler = scheduler;
-  const q = scheduler.take(Date.now());
+  let target = null;
+  while (manualRequests.length) {
+    const entry = questions.find(item => item.id === manualRequests[0]);
+    if (entry && ["new", "answering"].includes(entry.status)) { target = entry; break; }
+    manualRequests.shift();
+    if (entry?.analysis === "queued") entry.analysis = "idle";
+  }
+  const q = target ? scheduler.takeManual(target.rawText, Date.now()) : captureMode === "auto" ? scheduler.take(Date.now()) : null;
   if (q === null) {
     // Gate or in-flight blocked us; the done() path or the next speech event reschedules.
-    if (!scheduler.inFlight && scheduler.pending) schedule({ fireInMs: scheduler.nextDelay(Date.now()) });
+    if (captureMode === "auto" && !scheduler.inFlight && scheduler.pending) schedule({ fireInMs: scheduler.nextDelay(Date.now()) });
     return;
   }
+  if (target) { manualRequests.shift(); target.analysis = "loading"; }
+  const modeVersion = captureModeVersion, interaction = questionInteraction;
+  const captureRevision = target?.captureRevision || 0;
+  const captureKey = target ? target.captureKey : hintScheduler.takenCaptureKey;
+  const isCurrent = () => version === sessionVersion && (target ? (target.captureRevision || 0) === captureRevision : modeVersion === captureModeVersion && captureMode === "auto");
+  const canShow = () => !!isCurrent() && (target ? target.id === selectedId && ["new", "answering"].includes(target.status) : interaction === questionInteraction);
+  const accept = hint => {
+    if (target) {
+      target.hint = hint; target.analysis = "ready"; target.partialHint = null;
+      renderQueue(); if (canShow()) renderQuestion(target);
+    } else addQuestion(hint, { select: canShow(), rawText: q, captureKey });
+    if (canShow()) lastHint = hint;
+  };
+  if (target && canShow()) renderQuestion(target);
   if (partialFrame) cancelAnimationFrame(partialFrame);
   partialFrame = 0; pendingPartial = null;
   const t0 = performance.now();
@@ -204,6 +421,7 @@ async function requestHint() {
   let preparedHint = null;
   const topicIntent = experienceIntent(q, lastHint);
   const route = (hint) => {
+    if (target && hint) hint = { ...hint, is_question: true, question_summary: hint.question_summary || q };
     const routed = routeQuestionHint(hint, q, lastHint);
     return routed?.question_type === "career_walkthrough" && preparedResume(settings.resources)
       ? { ...routed, career_overview: [], keywords: [], answer_shape: [], watch_out: "" } : routed;
@@ -212,43 +430,48 @@ async function requestHint() {
     const preview = route({ is_question: true, question_summary: topicIntent ? `Experience with ${topicIntent.topic}` : "Walk through your career", question_type: "career_walkthrough",
       career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" });
     if (preview.question_type === "career_walkthrough" && preparedResume(settings.resources)) preparedHint = preview;
-    else renderHint(preview, { partial: true });
+    else if (canShow()) {
+      if (target) { target.partialHint = preview; renderQuestion(target); }
+      else renderHint(preview, { partial: true });
+    }
     shownPartial = true;
   }
   const titles = settings.stories.map((s) => s.title);
-  setHintState("Analysing\u2026");
+  if (canShow()) setHintState("Analysing\u2026");
   try {
     if (preparedHint) {
       const hint = route(validateHint(preparedHint, titles).hint);
-      addQuestion(hint); lastHint = hint;
-      setHintState("");
-      setStatus("Showing your prepared resume answer");
+      accept(hint);
+      if (canShow()) setHintState("");
+      if (canShow()) setStatus("Showing your prepared resume answer");
       trace.mark("hint.prepared", { kind: "resume_summary", ms: Math.round(performance.now() - t0) });
       return;
     }
     res = await getHint({
-      apiKey: settings.anthropicKey, model: settings.model, transcript, question: q,
+      apiKey: settings.anthropicKey, model: settings.model, transcript, question: q, questionSource: target?.source || "auto",
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
       resources: settings.resources, questions, lastHint, tier: settings.contextTier,
-      onFirstToken: (ms) => { if (version === sessionVersion) trace.mark("hint.ttft", { ms: Math.round(ms) }); },
+      onFirstToken: (ms) => { if (isCurrent()) trace.mark("hint.ttft", { ms: Math.round(ms) }); },
       // Show what has streamed so far: the question, stories and keywords arrive about a
       // second before the answer shape does. Provisional until the final validated hint.
       onPartial: (p) => {
-        if (version !== sessionVersion) return;
+        if (!isCurrent()) return;
         const h = route(provisionalHint(route(p), titles));
         if (!h) return;
         if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
-        renderPartial(h);
+        if (target) target.partialHint = h;
+        if (canShow()) renderPartial(h, { canShow, target });
       },
     });
-    if (version !== sessionVersion) return;
+    if (!isCurrent()) return;
     if (partialFrame) { cancelAnimationFrame(partialFrame); partialFrame = 0; } pendingPartial = null;
     const { ok, errors, hint: validated } = validateHint(route(res.hint), titles);
     const hint = route(validated);
     if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
     if (!ok) throw new Error("Hint rejected by validator; see console.");
-    if (hint.is_question) { addQuestion(hint); lastHint = hint; }
-    else { if (shownPartial) clearHintCard(); setHintState(""); }
+    if (target && hint.question_type === "none" && !hint.stories.length && !hint.keywords.length && !hint.technical_points?.length) throw new Error("No coaching cues returned for the selected question. Try a clearer excerpt or choose Answer now to retry.");
+    if (hint.is_question) accept(hint);
+    else if (canShow()) { if (shownPartial) clearHintCard(); setHintState(""); }
     const cached = !!res.usage.cache_read_input_tokens;
     lastCacheTouch = Date.now();
     trace.mark("hint.done", { ms: Math.round(res.ms), ttftMs: Math.round(res.ttftMs ?? 0), cached, isQuestion: hint.is_question, out: res.usage.output_tokens, sinceSttFinalMs: trace.since("stt.final") });
@@ -257,16 +480,23 @@ async function requestHint() {
       : `Hint in ${Math.round(res.ms)} ms${cached ? ", cached" : ""}`);
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
-    if (version !== sessionVersion) return;
+    if (!isCurrent()) return;
     if (partialFrame) cancelAnimationFrame(partialFrame);
     partialFrame = 0; pendingPartial = null;
     trace.mark("hint.error", { ms: Math.round(performance.now() - t0), error: e.message });
-    setHintState(e.message, true);
+    if (target) { target.analysis = "error"; target.partialHint = null; renderQueue(); }
+    if (canShow()) {
+      if (target) renderQuestion(target);
+      else setHintState(e.message, true);
+    }
     setStatus(e.message, true);
     recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
   } finally {
     const plan = hintScheduler.done(Date.now());
-    if (version === sessionVersion) schedule(plan);
+    if (version === sessionVersion) {
+      if (manualRequests.length) schedule({ fireInMs: 0 });
+      else if (captureMode === "auto") schedule(plan);
+    }
   }
 }
 
@@ -294,48 +524,64 @@ function clearHintCard() {
 
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
 // arriving while the interviewer is still talking updates the last entry in place.
-function addQuestion(h) {
+function addQuestion(h, { select = true, rawText = "", captureKey = null } = {}) {
   const last = questions[questions.length - 1];
-  if (shouldSupersede({ last, hint: h, now: Date.now(), lastCandidateAt })) {
+  if ((select || last?.id !== selectedId) && shouldSupersede({ last, hint: h, now: Date.now(), lastCandidateAt })) {
     last.hint = h;
     last.at = Date.now();
-    selectedId = last.id;
+    last.rawText = rawText; last.captureKey = captureKey;
+    if (select) selectedId = last.id;
   } else {
     settleAnswering(questions, { lastCandidateAt }); // the one being answered is now done
-    const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new" };
+    const q = { id: ++qSeq, at: Date.now(), hint: h, status: "new", source: "auto", rawText, captureKey };
     questions.push(q);
-    selectedId = q.id;
+    if (select) selectedId = q.id;
   }
-  renderQueue();
+  renderQueue({ revealSelected: select });
+  if (!select) { renderActions(); return; }
   renderHint(h);
   ui.hint.classList.add("fresh");
   setTimeout(() => ui.hint.classList.remove("fresh"), 1500);
 }
 
-const STATUS_LABEL = { new: "", answering: "Answering", answered: "Answered", later: "Later", dismissed: "Moved on" };
+const STATUS_LABEL = { new: "New", answering: "Answering", answered: "Answered", later: "Postponed", dismissed: "Skipped" };
 
-function renderQueue() {
+function renderQueue({ revealSelected = false } = {}) {
+  const active = document.activeElement, scrollTop = ui.questions.scrollTop;
+  const focusedCard = Array.from(ui.questions.children).find(card => card.contains(active));
+  const focus = focusedCard ? { id: focusedCard.dataset.questionId, action: active.dataset?.action } : null;
+  let restoreFocus = null, selectedControl = null;
   ui.questions.innerHTML = "";
   if (!questions.length) {
     const li = document.createElement("li");
     li.className = "qEmpty";
-    li.textContent = "Detected questions will appear here. Click one to bring its hint back.";
+    li.textContent = "Questions appear here. Capture one with Space or click a transcript line.";
     ui.questions.appendChild(li);
     return;
   }
   for (const q of queueOrder(questions)) {
     const li = document.createElement("li");
     li.className = `qItem status-${q.status}${q.id === selectedId ? " selected" : ""}`;
+    li.dataset.questionId = String(q.id);
 
     const when = document.createElement("span");
     when.className = "qWhen";
-    when.textContent = new Date(q.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    when.textContent = new Date(q.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ` · ${q.source === "transcript" ? "Transcript" : q.explicit ? "Manual" : "Auto"}`;
 
     const text = document.createElement("span");
     text.className = "qText";
-    const gap = hasStoryGap(q.hint);
-    text.textContent = `${gap ? "\u26a0 " : ""}${q.hint.question_summary || "(question)"}`;
+    const gap = (!q.analysis || q.analysis === "ready") && hasStoryGap(q.hint);
+    text.textContent = `${gap ? "\u26a0 " : ""}${q.explicit ? q.rawText : q.hint.question_summary || "(question)"}`;
     if (gap) text.title = "No story in your bank fits this question";
+    text.tabIndex = 0; text.setAttribute("role", "button");
+    text.id = `question-text-${q.id}`;
+    if (q.id === selectedId) selectedControl = text;
+    if (focus?.id === String(q.id)) restoreFocus = text;
+    text.setAttribute("aria-label", `Review question: ${q.explicit ? q.rawText : q.hint.question_summary}`);
+    text.onkeydown = event => {
+      if (!["Enter", " "].includes(event.key) || event.repeat) return;
+      event.preventDefault(); event.stopPropagation(); selectQuestion(q);
+    };
 
     li.append(when, text);
     if (STATUS_LABEL[q.status]) {
@@ -345,42 +591,55 @@ function renderQueue() {
       li.appendChild(tag);
     }
 
-    if (q.status === "answering") {
-      const done = document.createElement("button");
-      done.className = "qX";
-      done.textContent = "\u2713";
-      done.title = "Mark answered";
-      done.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "answered"); };
-      li.appendChild(done);
+    const actions = document.createElement("div"); actions.className = "qActions";
+    const choices = [["answering", q.status === "answering" ? "Done" : "Answer now"], ["later", "Postpone"], ["dismissed", "Skip"]];
+    if (q.analysis === "error") choices.push(["retry", "Retry coaching"]);
+    for (const [action, label] of choices) {
+      const button = document.createElement("button"); button.className = "small";
+      button.textContent = label; button.dataset.action = action;
+      button.setAttribute("aria-describedby", text.id);
+      button.disabled = action === "retry" ? sessionStart === null : action !== "answering" ? q.status === action : sessionStart === null && !!q.analysis && q.analysis !== "ready";
+      button.onclick = event => { event.stopPropagation(); if (action === "retry") retryQuestion(q); else if (action === "answering") answerQuestion(q); else setQuestionStatus(q, action); };
+      if (focus?.id === String(q.id) && focus.action === action && !button.disabled) restoreFocus = button;
+      actions.appendChild(button);
     }
-    const x = document.createElement("button");
-    x.className = "qX";
-    if (LIVE(q)) {
-      x.textContent = "\u2715";
-      x.title = "Move on: drop to the bottom of the list";
-      x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "dismissed"); };
-    } else {
-      x.textContent = "\u21ba Bring back";
-      x.title = "Bring this question back up";
-      x.onclick = (e) => { e.stopPropagation(); setQuestionStatus(q, "new"); selectedId = q.id; renderQueue(); renderHint(q.hint); };
-    }
-    li.appendChild(x);
-
-    li.onclick = () => { selectedId = q.id; renderQueue(); renderHint(q.hint); };
+    li.appendChild(actions);
+    li.onclick = () => selectQuestion(q);
     ui.questions.appendChild(li);
   }
+  ui.questions.scrollTop = scrollTop;
+  if (revealSelected && !restoreFocus) selectedControl?.scrollIntoView({ block: "nearest" });
+  restoreFocus?.focus();
+}
+
+function answerQuestion(q) {
+  setQuestionStatus(q, q.status === "answering" ? "answered" : "answering");
+}
+
+function retryQuestion(q) {
+  if (sessionStart === null || q.analysis !== "error") return;
+  const focusedRetry = ui.hintActions.contains(document.activeElement) && document.activeElement.dataset?.act === "retry";
+  questionInteraction++;
+  if (!["new", "answering"].includes(q.status)) q.status = "new";
+  selectedId = q.id;
+  queueCapturedHint(q);
+  renderQueue({ revealSelected: true }); renderQuestion(q);
+  if (focusedRetry) ui.hintActions.querySelector('[data-act="answering"]').focus();
 }
 
 // Set a question's triage state. Dismissing the selected one hands focus to the newest live question.
 function setQuestionStatus(q, status) {
+  questionInteraction++;
   q.status = status;
-  if (!LIVE(q) && q.id === selectedId) {
-    const next = [...questions].reverse().find(LIVE);
+  if (status === "answering") { selectedId = q.id; queueCapturedHint(q); }
+  if (["later", "answered", "dismissed"].includes(status) && q.id === selectedId) {
+    const next = queueOrder(questions).find(item => item.id !== q.id && ["new", "answering"].includes(item.status));
     selectedId = next ? next.id : null;
-    if (next) renderHint(next.hint);
+    if (next) renderQuestion(next);
     else clearHintCard();
   }
-  renderQueue();
+  renderQueue({ revealSelected: status === "answering" });
+  if (selectedId === q.id) renderQuestion(q);
 }
 
 let careerView = { key: "", index: 0, newest: false };
@@ -629,15 +888,17 @@ function renderHint(h, { partial = false } = {}) {
   ui.hintActions.hidden = partial; // chips need a queue entry, which only the final hint creates
 }
 
-// The chips mirror the selected question's state, so "Answer this" reads "Answering ✓ done"
-// once clicked and a second tap marks it answered instead of silently clearing it.
-const ACT_LABEL = { answering: "Answer this", later: "Think about it", dismissed: "Move on" };
+// Answer/Done follows the user's response state. Retrying failed coaching is a
+// separate action so it never silently marks an answer complete.
+const ACT_LABEL = { answering: "Answer now", later: "Postpone", dismissed: "Skip", retry: "Retry coaching" };
 function renderActions() {
   const q = questions.find((x) => x.id === selectedId);
   for (const b of ui.hintActions.querySelectorAll("[data-act]")) {
     const act = b.dataset.act;
     const on = q && q.status === act;
     b.classList.toggle("on", !!on);
+    b.hidden = act === "retry" && q?.analysis !== "error";
+    b.disabled = sessionStart === null && (act === "retry" || (act === "answering" && !!q?.analysis && q.analysis !== "ready"));
     b.textContent = on && act === "answering" ? "Answering \u2014 tap when done" : ACT_LABEL[act];
   }
 }
@@ -658,7 +919,7 @@ function setHintState(text, isError = false) {
 
 // Questions that had no story behind them: the candidate's prep list for next time.
 function gapQuestions() {
-  return questions.filter((q) => hasStoryGap(q.hint)).map((q) => q.hint.question_summary);
+  return questions.filter((q) => (!q.analysis || q.analysis === "ready") && hasStoryGap(q.hint)).map((q) => q.hint.question_summary);
 }
 
 function sessionMetadata() {
@@ -739,6 +1000,7 @@ function beginSessionIfNeeded() {
   interim = { interviewer: null, candidate: null };
   lastHint = null;
   scheduler = new HintScheduler();
+  manualRequests = []; questionCapture.reset(); captureModeVersion++; questionInteraction++;
   lastCandidateAt = 0;
   prewarm("session start");
   clearTimeout(hintTimer);
@@ -887,12 +1149,17 @@ async function stopAll() {
   if (partialFrame) cancelAnimationFrame(partialFrame);
   partialFrame = 0; pendingPartial = null;
   scheduler = new HintScheduler();
+  manualRequests = []; captureModeVersion++; questionInteraction++;
+  for (const q of questions) if (["queued", "loading"].includes(q.analysis)) { q.analysis = "idle"; q.partialHint = null; }
   for (const sp of ["interviewer", "candidate"]) {
     capturePending[sp] = null;
     streams[sp]?.stop(); streams[sp] = null;
     media[sp]?.getTracks().forEach((t) => t.stop()); media[sp] = null;
   }
   detachCall();
+  renderQueue();
+  if (selectedId !== null) renderQuestion(questions.find(q => q.id === selectedId));
+  renderCaptureControls();
   stopTalkClock();
   ui.tab.classList.remove("active"); ui.mic.classList.remove("active"); ui.stop.disabled = true;
   ui.tab.disabled = false; ui.mic.disabled = false;
@@ -914,6 +1181,7 @@ async function stopAll() {
 // --- Boot ------------------------------------------------------------------
 
 (async () => {
+  try { captureMode = questionMode(localStorage.getItem(QUESTION_MODE_KEY)); } catch { captureMode = "auto"; }
   settings = nextSettings = await loadSettings();
   if (!settings.anthropicKey || !sttKey()) setStatus("Add your API keys in Settings before starting.", true);
   renderBankWarning();
@@ -938,6 +1206,28 @@ async function stopAll() {
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;
   ui.save.onclick = saveTranscript;
+  ui.questionMode.onchange = () => setCaptureMode(ui.questionMode.value);
+  ui.captureQuestion.onclick = captureLatestQuestion;
+  document.addEventListener("selectionchange", renderTranscript);
+  ui.transcript.onpointerdown = event => {
+    if (event.button === 0) transcriptPointer = { id: event.pointerId, el: event.target.closest?.(".line") };
+  };
+  const endTranscriptPointer = event => {
+    if (!transcriptPointer || event.pointerId !== transcriptPointer.id) return;
+    transcriptPointer = null; refreshTranscriptAfterInteraction();
+  };
+  document.addEventListener("pointerup", endTranscriptPointer);
+  document.addEventListener("pointercancel", endTranscriptPointer);
+  window.addEventListener("blur", () => {
+    if (transcriptPointer) { transcriptPointer = null; refreshTranscriptAfterInteraction(); }
+  });
+  ui.transcript.onfocusout = refreshTranscriptAfterInteraction;
+  document.addEventListener("keydown", event => {
+    const selected = selectedTranscriptText();
+    if (!captureShortcut(event) || sessionStart === null || (captureMode !== "manual" && !selected) || !(selected || questionCapture.snapshot()?.text)) return;
+    event.preventDefault(); captureLatestQuestion();
+  });
+  renderCaptureControls();
   panelLayout = createPanelLayout({ document, window, storage: () => localStorage, onChange: (preset) => trace.mark("layout.change", { preset }) });
   ui.full.onclick = toggleFullscreen;
   ui.careerPrev.onclick = () => { careerView.index--; renderCareerRole(); };
@@ -957,8 +1247,10 @@ async function stopAll() {
     if (!act) return;
     const q = questions.find((x) => x.id === selectedId);
     if (!q) return;
-    // Tapping "Answer this" again means "I answered it"; the other chips toggle off.
-    setQuestionStatus(q, q.status === act ? (act === "answering" ? "answered" : "new") : act);
+    // Retrying failed coaching is separate from marking an answer complete.
+    if (act === "retry") retryQuestion(q);
+    else if (act === "answering") answerQuestion(q);
+    else setQuestionStatus(q, q.status === act ? "new" : act);
     renderActions();
   };
 })();

@@ -13,8 +13,16 @@
     <button id="btnMic">2. Capture my mic</button>
     <button id="btnStop" disabled>Stop</button>
     <button id="btnFull" class="small" title="Fill the screen with the call and the coach">Full screen</button>
+    <div class="questionCaptureControls">
+      <label for="questionMode">Questions</label>
+      <select id="questionMode" title="Automatic detects questions as people speak. Manual only coaches questions you capture.">
+        <option value="auto">Automatic</option><option value="manual">Manual</option>
+      </select>
+      <button id="btnCaptureQuestion" class="small" disabled title="Capture the latest interviewer utterance, or selected transcript text. Space works in Manual mode or on selected transcript text, while this coach window is focused.">Capture question</button>
+    </div>
     <a href="options.html" target="_blank" class="link">Settings</a>
   </div>
+  <div id="questionCaptureNotice" class="questionCaptureNotice" role="status">Automatic questions. Use the capture button, click a transcript line, or select transcript text and press Space.</div>
   <div class="layoutToolbar" aria-label="Display settings">
     <div class="layoutPresets" role="group" aria-label="Layout preset">
       <button id="layoutText" class="small" aria-pressed="true">Text-heavy</button>
@@ -116,9 +124,10 @@
         <div class="followUps" id="followUps"></div>
       </details>
       <div class="hintActions" id="hintActions" hidden>
-        <button data-act="answering" class="act">Answer this</button>
-        <button data-act="later" class="act">Think about it</button>
-        <button data-act="dismissed" class="act">Move on</button>
+        <button data-act="answering" class="act">Answer now</button>
+        <button data-act="later" class="act">Postpone</button>
+        <button data-act="dismissed" class="act">Skip</button>
+        <button data-act="retry" class="act" hidden>Retry coaching</button>
       </div>
     </section>
 
@@ -127,7 +136,7 @@
         <span>Questions</span>
         <button id="btnSave" class="small" disabled>Save transcript</button>
       </div>
-      <ol id="questions" class="questions"><li class="qEmpty">Detected questions will appear here. Click one to bring its hint back.</li></ol>
+      <ol id="questions" class="questions"><li class="qEmpty">Questions appear here. Capture one with Space or click a transcript line.</li></ol>
     </section>
   </div>
 </main>
