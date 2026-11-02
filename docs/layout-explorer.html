@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interview Coach · Layout explorer</title>
+<link rel="stylesheet" href="../panel.css">
+<style>
+  html { color-scheme: dark; }
+  body { font-size: 16px; }
+  [hidden] { display: none !important; }
+  .labHeader { padding: 14px 20px 12px; }
+  .labTitle { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+  .sampleBadge { color: var(--accent); font-size: 12px; }
+  .about { margin-left: auto; color: var(--muted); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 12px; }
+  .presets { display: flex; gap: 4px; padding: 3px; border: 1px solid #343949; border-radius: 10px; }
+  .presets button { border-color: transparent; background: transparent; font-size: 13px; padding: 7px 12px; }
+  .presets button[aria-pressed="true"] { color: var(--accent); background: #24362f; border-color: #395d4b; }
+  .setting { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+  select { background: #262a35; color: var(--fg); border: 1px solid #343949; border-radius: 6px; padding: 6px; font: inherit; }
+  select:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .viewTools { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .description { margin: 10px 0 0; color: #b3bac8; font-size: 13px; line-height: 1.5; }
+  .labStage { --left: 50%; --video: 26%; --reading-size: 16px; }
+  .labStage.stage { grid-template-columns: minmax(300px, var(--left)) 10px minmax(400px, 1fr); }
+  .mediaColumn { display: grid; grid-template-rows: minmax(96px, var(--video)) 10px minmax(140px, 1fr); min-height: 0; min-width: 0; }
+  .labStage[data-layout="current"] .mediaColumn { grid-template-rows: minmax(0, 1fr); }
+  .labStage .callPane { align-items: center; justify-content: center; overflow: hidden; background: #0b0e13; }
+  .callPicture { width: 100%; height: 100%; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .labStage[data-layout="text"] .callPicture { max-width: 320px; }
+  .meeting { position: relative; width: 100%; height: 100%; max-height: 100%; aspect-ratio: 16 / 9; background: radial-gradient(ellipse at 55% 30%, #304755, #1c2634 70%); display: flex; align-items: center; justify-content: center; }
+  .avatar { width: min(30%, 120px); aspect-ratio: 1; border-radius: 50%; background: #547669; color: #f0f6ed; display: flex; align-items: center; justify-content: center; font-size: clamp(20px, 3vw, 42px); font-weight: 500; }
+  .participant { position: absolute; bottom: 12px; left: 12px; padding: 4px 8px; background: #101820b8; color: #d1dce7; border-radius: 5px; font-size: 12px; }
+  .board { width: 100%; max-height: 100%; aspect-ratio: 16 / 9; background: #eef1f5; }
+  .splitter { background: #11151c; position: relative; touch-action: none; outline-offset: -2px; }
+  .splitter::after { content: ""; position: absolute; border-radius: 4px; background: #475165; }
+  .columnDivider { cursor: col-resize; }
+  .columnDivider::after { width: 3px; height: 34px; top: calc(50% - 17px); left: 3.5px; }
+  .rowDivider { cursor: row-resize; }
+  .rowDivider::after { height: 3px; width: 34px; left: calc(50% - 17px); top: 3.5px; }
+  .splitter:hover, .splitter:focus-visible { background: #273c35; outline: 2px solid var(--accent); z-index: 1; }
+  .splitter:hover::after, .splitter:focus-visible::after { background: var(--accent); }
+  .dragging, .dragging * { cursor: var(--drag-cursor) !important; user-select: none !important; }
+  .labStage .coach { background: var(--bg); }
+  .labStage .hint { font-size: var(--reading-size); line-height: 1.55; }
+  .labStage .question { font-size: 1.25em; line-height: 1.35; }
+  .labStage:not([data-layout="current"]) .hint { flex: 1 1 0; min-height: 0; max-height: none; }
+  .labStage:not([data-layout="current"]) .queue { display: flex; flex-direction: column; min-height: 0; max-height: 35%; padding-bottom: 12px; }
+  .labStage:not([data-layout="current"]) .queueHead { flex: none; }
+  .labStage:not([data-layout="current"]) .questions { min-height: 0; max-height: 135px; flex: 1 1 auto; }
+  .labStage .shapeList { font-size: .94em; line-height: 1.6; }
+  .captionPane { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  .captionHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 12px 14px 8px; flex: none; }
+  .paneLabel { font-size: 12px; color: #b3bac8; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+  .sampleLive { color: var(--muted); font-size: 11px; }
+  .captionPane .pace { padding: 0 14px 8px; }
+  .labStage .transcript { font-size: var(--reading-size); line-height: 1.55; min-height: 0; gap: 12px; }
+  .labStage .line { line-height: 1.55; }
+  .labStage[data-layout="current"] .captionPane { flex: 1 1 0; min-height: 80px; }
+  .prepared { white-space: pre-line; line-height: 1.65; margin-top: 8px; }
+  .readingLabel { color: var(--accent); font-size: .8em; margin-top: 14px; }
+  .labStage.noCall .mediaColumn { grid-template-rows: minmax(0, 1fr); }
+  .labStage.noTranscript .mediaColumn { grid-template-rows: minmax(0, 1fr); }
+  .labStage.mediaHidden.stage { grid-template-columns: minmax(0, 1fr); }
+  .labStage.mediaHidden .coach { width: 100%; }
+  .labStage.mediaHidden .hint { width: min(calc(100% - 20px), 1000px); align-self: center; }
+  .labFooter { padding: 7px 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 18px; font-size: 11px; color: var(--muted); }
+  dialog { background: var(--panel); color: var(--fg); border: 1px solid #475165; border-radius: 12px; width: min(850px, calc(100vw - 32px)); max-height: 85vh; padding: 24px; line-height: 1.6; }
+  dialog::backdrop { background: #000b; }
+  dialog h2 { font-size: 20px; margin: 0 0 10px; }
+  dialog h3 { font-size: 16px; margin: 22px 0 8px; }
+  dialog p { margin: 10px 0; }
+  dialog ul { padding-left: 20px; }
+  dialog a { color: var(--interviewer); }
+  dialog code { font-size: 13px; }
+  dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  dialog th, dialog td { text-align: left; padding: 9px; border-bottom: 1px solid #343949; vertical-align: top; }
+  .closeNotes { float: right; margin: -8px -8px 0 10px; }
+  .narrowNotice { display: none; color: var(--candidate); }
+  @media (max-width: 899px) {
+    .labHeader { padding: 12px; }
+    .viewTools { margin-left: 0; }
+    .labStage.stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 40%) 10px minmax(0, 1fr); }
+    .labStage .mediaColumn { grid-template-columns: minmax(120px, 32%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+    .labStage .mediaColumn.oneMedia { grid-template-columns: minmax(0, 1fr); }
+    .labStage[data-layout="current"] .mediaColumn { grid-template-columns: minmax(0, 1fr); }
+    .labStage .columnDivider { cursor: default; pointer-events: none; }
+    .labStage .columnDivider::after { display: none; }
+    .labStage .rowDivider { display: none; }
+    .labStage[data-layout="whiteboard"] .mediaColumn:not(.oneMedia) { grid-template-columns: minmax(120px, 58%) minmax(0, 1fr); }
+    .labStage.mediaHidden.stage { grid-template-rows: minmax(0, 1fr); }
+    .labStage:not([data-layout="current"]) .questions { max-height: 90px; }
+    .labStage .hint { min-height: 0; }
+    .narrowNotice { display: inline; }
+  }
+  @media (max-width: 479px) {
+    .toolbar { gap: 8px 12px; }
+    .presets { width: 100%; }
+    .presets button { flex: 1; padding: 6px; }
+    .setting { gap: 4px; }
+    .labStage.stage { grid-template-rows: minmax(0, 32%) 10px minmax(0, 1fr); }
+    .labStage .mediaColumn:not(.oneMedia):not(.currentMedia) { grid-template-columns: minmax(0, 25%) minmax(0, 1fr); }
+    .labStage[data-layout="whiteboard"] .mediaColumn:not(.oneMedia) { grid-template-columns: minmax(0, 45%) minmax(0, 1fr); }
+    .participant { left: 4px; bottom: 4px; font-size: 10px; padding: 2px; }
+    .sampleLive { display: none; }
+    .captionHead { padding: 6px 10px; }
+    .captionPane .pace { padding: 0 10px 4px; font-size: 11px; }
+    .description { font-size: 12px; }
+  }
+  @media (max-width: 899px) and (max-height: 650px) {
+    .description { display: none; }
+    .labStage.stage:not(.mediaHidden) { grid-template-rows: minmax(0, 28%) 10px minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header class="labHeader">
+  <div class="labTitle">
+    <h1>Interview Coach <span style="font-weight:400;color:var(--muted)">/ Layout explorer</span></h1>
+    <span class="sampleBadge">Prototype · fictional content</span>
+    <button id="about" class="small about">Findings &amp; proposal</button>
+  </div>
+  <div class="toolbar">
+    <div class="presets" role="group" aria-label="Layout preset">
+      <button data-preset="text" aria-pressed="true">Text-heavy</button>
+      <button data-preset="whiteboard" aria-pressed="false">Whiteboard</button>
+      <button data-preset="current" aria-pressed="false">Current</button>
+    </div>
+    <label class="setting">Sample
+      <select id="sample">
+        <option value="interview">Experience question</option>
+        <option value="resume">Long prepared answer</option>
+        <option value="design">Whiteboard discussion</option>
+      </select>
+    </label>
+    <label class="setting">Text
+      <select id="fontSize" aria-label="Reading text size">
+        <option value="14">14 px</option><option value="16" selected>16 px</option>
+        <option value="18">18 px</option><option value="20">20 px</option>
+      </select>
+    </label>
+    <div class="viewTools">
+      <button id="toggleCall" class="small" aria-pressed="true">Hide call</button>
+      <button id="toggleTranscript" class="small" aria-pressed="true">Hide transcript</button>
+      <button id="reset" class="small">Reset layout</button>
+    </div>
+  </div>
+  <p id="description" class="description" aria-live="polite"></p>
+</header>
+
+<main id="stage" class="stage labStage" data-layout="text" aria-label="Layout preview">
+  <div id="mediaColumn" class="mediaColumn">
+    <section id="callPane" class="callPane" aria-label="Sample shared call">
+      <div class="callPicture">
+        <div id="meeting" class="meeting">
+          <div class="avatar" aria-hidden="true">IN</div>
+          <span class="participant">Interviewer · sample call</span>
+        </div>
+        <svg id="board" class="board" viewBox="0 0 960 540" role="img" aria-labelledby="boardTitle" hidden>
+          <title id="boardTitle">Sample shared whiteboard: asynchronous notification delivery</title>
+          <defs>
+            <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#d6dce5"/></pattern>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10" fill="none" stroke="#607287" stroke-width="1.5"/></marker>
+          </defs>
+          <rect width="960" height="540" fill="url(#dots)"/>
+          <g font-family="system-ui, sans-serif" fill="#25364a">
+            <text x="50" y="53" font-size="14" letter-spacing="2" fill="#607287">SYSTEM DESIGN / SHARED WHITEBOARD</text>
+            <text x="50" y="93" font-size="28" font-weight="600">Async notification delivery</text>
+            <text x="50" y="128" font-size="17" fill="#607287">Decouple the request. Keep every delivery observable.</text>
+            <g fill="none" stroke="#607287" stroke-width="2" marker-end="url(#arrow)">
+              <path d="M230 243H300"/><path d="M480 243H550"/><path d="M730 243H800"/>
+              <path d="M640 286V373H480"/><path d="M390 373V286" stroke-dasharray="7 5"/>
+            </g>
+            <rect x="50" y="200" width="180" height="86" rx="12" fill="#e3ebf7" stroke="#6e92c5"/>
+            <rect x="300" y="200" width="180" height="86" rx="12" fill="#e1eee8" stroke="#69a488"/>
+            <rect x="550" y="200" width="180" height="86" rx="12" fill="#e3ebf7" stroke="#6e92c5"/>
+            <rect x="800" y="200" width="110" height="86" rx="12" fill="#e3ebf7" stroke="#6e92c5"/>
+            <rect x="300" y="335" width="180" height="76" rx="12" fill="#fcf0d9" stroke="#cba760"/>
+            <g text-anchor="middle" font-size="20" font-weight="500">
+              <text x="140" y="237">API</text><text x="390" y="237">Queue</text><text x="640" y="237">Workers</text><text x="855" y="250">Provider</text>
+              <text x="390" y="367">Retry / DLQ</text>
+            </g>
+            <g text-anchor="middle" font-size="14" fill="#607287">
+              <text x="140" y="264">validate + enqueue</text><text x="390" y="264">durable events</text><text x="640" y="264">idempotent delivery</text><text x="390" y="393">backoff + inspection</text>
+            </g>
+            <text x="50" y="470" font-size="17">Discuss: retries · ordering · duplicate delivery · queue lag</text>
+            <text x="50" y="502" font-size="14" fill="#607287">Fictional exercise. This preview is a mirror, not an editable whiteboard.</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+    <div id="rowDivider" class="splitter rowDivider" role="separator" tabindex="0" aria-label="Resize call and transcript" aria-orientation="horizontal" aria-valuemin="15" aria-valuemax="80" aria-valuenow="26" aria-controls="callPane captions"></div>
+    <section id="captions" class="captionPane" aria-label="Transcript">
+      <div class="captionHead"><span class="paneLabel">Transcript</span><span class="sampleLive">Sample captions · no recording</span></div>
+      <div class="pace"><span>You've been talking <b>42s</b></span><span>Comfortable pace</span></div>
+      <div id="transcript" class="transcript" tabindex="0" aria-label="Scrollable sample transcript"></div>
+    </section>
+  </div>
+  <div id="columnDivider" class="splitter columnDivider" role="separator" tabindex="0" aria-label="Resize call area and coach" aria-orientation="vertical" aria-valuemin="25" aria-valuemax="70" aria-valuenow="50" aria-controls="mediaColumn coach"></div>
+  <div id="coach" class="coach">
+    <section id="hint" class="hint" tabindex="0" aria-label="Scrollable coach answers and notes">
+      <div class="hintTop"><div id="qtype" class="qtype">Experience</div><div class="hintState">Sample hint</div></div>
+      <div id="question" class="question"></div>
+      <div id="answer"></div>
+      <div id="hintActions" class="hintActions" role="group" aria-label="Sample question status">
+        <button class="act" aria-pressed="false">Answer this</button><button class="act" aria-pressed="false">Think about it</button><button class="act" aria-pressed="false">Move on</button>
+      </div>
+    </section>
+    <section class="queue" aria-label="Sample detected questions">
+      <div class="queueHead"><span>Questions</span><span style="font-size:11px;text-transform:none;letter-spacing:0">Choose to preview</span></div>
+      <ol id="questions" class="questions">
+        <li><button class="qItem selected" style="width:100%;text-align:left" data-sample="interview" aria-current="true"><span class="qWhen">02:18</span><span class="qText">A difficult cross-team project</span><span class="qStatus">Now</span></button></li>
+        <li><button class="qItem" style="width:100%;text-align:left" data-sample="resume"><span class="qWhen">00:35</span><span class="qText">Walk me through your background</span></button></li>
+        <li><button class="qItem" style="width:100%;text-align:left" data-sample="design"><span class="qWhen">04:40</span><span class="qText">Design notification delivery</span></button></li>
+      </ol>
+    </section>
+  </div>
+</main>
+
+<footer class="labFooter">
+  <span>In wide windows, drag dividers or focus one and use arrow keys. Double-click to reset. <span class="narrowNotice">Narrow window: panes reflow automatically.</span></span>
+  <span id="saveState">Layout preferences stay in this browser. No APIs or capture.</span>
+</footer>
+
+<dialog id="findings" aria-labelledby="findingsTitle">
+  <button id="closeNotes" class="small closeNotes" autofocus>Close</button>
+  <h2 id="findingsTitle">Make room for what the interview needs</h2>
+  <p>The right half is for the candidate's coach answers and notes. The left holds the shared call and its transcript. This explorer tests that arrangement using fictional content and the existing coach's visual styles.</p>
+  <h3>What the current code does</h3>
+  <ul>
+    <li><a href="../panel.css">panel.css</a> fixes the coach to <code>minmax(360px, 36%)</code> when the call is visible. At the default 1280 px window, that is about 461 px for every text section.</li>
+    <li>The hint has a 55vh height cap (65vh for a career walkthrough). The queue can use another 22vh. The transcript shares whatever vertical space remains.</li>
+    <li><a href="../lib/callView.js">lib/callView.js</a> switches to a stacked layout below 900 px. <a href="../panel.js">panel.js</a> supports Hide call and Full screen, but no manual split or saved layout preference.</li>
+    <li>The picture is a muted mirror of the captured tab. Controls and editing remain in the original meeting or whiteboard tab.</li>
+  </ul>
+  <h3>Three starting points, with manual adjustment</h3>
+  <table>
+    <thead><tr><th>Preset</th><th>Left</th><th>Right</th></tr></thead>
+    <tbody>
+      <tr><td>Text-heavy</td><td>50% width; small, centered call preview above a tall transcript. Call starts at 26% of the left pane's height.</td><td>50% width for answers and notes, with the question queue below.</td></tr>
+      <tr><td>Whiteboard</td><td>64% width; large shared picture with transcript below. Call starts at 74% of the left pane's height.</td><td>36% width for coaching; widen with the divider as needed.</td></tr>
+      <tr><td>Current</td><td>64% width; full-height call.</td><td>36% width; hint, questions and transcript together, matching today's arrangement.</td></tr>
+    </tbody>
+  </table>
+  <p>Use the same sample across presets to compare fairly. Try the long prepared answer at 18 px and the whiteboard discussion with a large picture.</p>
+  <h3>Proposed behavior in the live coach</h3>
+  <ul>
+    <li>Keep a visible preset picker, a column divider and a call/transcript divider. Provide keyboard arrows, size limits, text size, hide/show controls and a reset.</li>
+    <li>Save splits and visibility per preset, plus a shared reading size and the last selected preset. Store display preferences separately from candidate/job context. Keep Current as the initial choice for existing users.</li>
+    <li>Switch layouts by moving the existing transcript container, preserving its DOM, scroll position, call video element and media stream. Layout changes must not restart capture or affect the hint pipeline.</li>
+    <li>Give the answer pane the available height in the new presets. Keep the transcript and question history independently scrollable. Below 900 px, put media above the coach and keep the reading pane full width.</li>
+    <li>Preserve the shared picture's aspect ratio. A small preview is appropriate for conversation; use Whiteboard when shared text or diagrams must be readable. The mirror still cannot accept meeting/whiteboard interaction.</li>
+  </ul>
+  <h3>Validate before integrating</h3>
+  <p>Compare a long answer, technical notes and busy captions at 1280×820, 1440×900 and a narrow window. Check 125–150% browser zoom, 20 px text, keyboard resizing, hidden panes and per-preset restoration. In the real extension, verify uninterrupted audio/captions while changing layouts, video-track end and Stop, full screen, restored preferences and Linux/Wayland resizing.</p>
+  <p>This is a design prototype. Its controls work locally; sample captions are static. Changes to the live extension, media lifecycle and extension storage are still to be implemented and tested.</p>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const defaults = {
+    text: { left: 50, video: 26, call: true, transcript: true },
+    whiteboard: { left: 64, video: 74, call: true, transcript: true },
+    current: { left: 64, video: 74, call: true, transcript: true },
+  };
+  const descriptions = {
+    text: "Text-heavy · Small call preview and transcript on the left. Half the window for coach answers and notes.",
+    whiteboard: "Whiteboard · Large shared picture with transcript below. Coaching stays alongside; drag to give it more room.",
+    current: "Current · Full-height call on the left. Hints, questions and transcript share the right column.",
+  };
+  const storageKey = "interview-coach-layout-explorer-v1";
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  let selected = "text", fontSize = 16, views = structuredClone(defaults);
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey));
+    if (saved && Object.hasOwn(defaults, saved.selected)) selected = saved.selected;
+    if ([14, 16, 18, 20].includes(saved?.fontSize)) fontSize = saved.fontSize;
+    for (const key of Object.keys(defaults)) {
+      const view = saved?.views?.[key];
+      if (!view || typeof view !== "object") continue;
+      for (const prop of ["left", "video"]) {
+        if (Number.isFinite(view[prop])) views[key][prop] = clamp(view[prop], prop === "left" ? 25 : 15, prop === "left" ? 70 : 80);
+      }
+      for (const prop of ["call", "transcript"]) if (typeof view[prop] === "boolean") views[key][prop] = view[prop];
+    }
+  } catch { /* Missing or blocked storage leaves usable defaults. */ }
+
+  let storageAvailable = true;
+  function save() {
+    try { localStorage.setItem(storageKey, JSON.stringify({ selected, fontSize, views })); }
+    catch { storageAvailable = false; }
+    $("saveState").textContent = storageAvailable
+      ? "Layout preferences stay in this browser. No APIs or capture."
+      : "Storage unavailable: preferences last for this visit. No APIs or capture.";
+  }
+
+  const isNarrow = () => window.innerWidth < 900;
+  function columnBounds() {
+    if (isNarrow()) return { min: 25, max: 70 };
+    const width = $("stage").clientWidth;
+    return { min: Math.max(25, 300 / width * 100), max: Math.min(70, (width - 410) / width * 100) };
+  }
+  function rowBounds() {
+    const height = $("mediaColumn").clientHeight;
+    if (isNarrow() || height < 246) return { min: 15, max: 80 };
+    return { min: Math.max(15, 96 / height * 100), max: Math.min(80, (height - 150) / height * 100) };
+  }
+
+  function render() {
+    const view = views[selected], stage = $("stage"), media = $("mediaColumn");
+    const current = selected === "current";
+    // Reuse the exact same nodes when changing arrangement, as the live coach should.
+    const captionParent = current ? $("coach") : media;
+    if ($("captions").parentElement !== captionParent) captionParent.append($("captions"));
+    stage.dataset.layout = selected;
+    stage.classList.toggle("noCall", !view.call);
+    stage.classList.toggle("noTranscript", !view.transcript);
+    const mediaHidden = !view.call && (current || !view.transcript);
+    stage.classList.toggle("mediaHidden", mediaHidden);
+    media.hidden = mediaHidden;
+    media.classList.toggle("oneMedia", !view.call || !view.transcript);
+    media.classList.toggle("currentMedia", current);
+    $("callPane").hidden = !view.call;
+    $("captions").hidden = !view.transcript;
+    $("columnDivider").hidden = mediaHidden;
+    $("rowDivider").hidden = current || !view.call || !view.transcript || isNarrow();
+    const col = columnBounds();
+    const actualLeft = isNarrow() ? view.left : clamp(view.left, col.min, col.max);
+    const row = rowBounds();
+    const actualVideo = isNarrow() || current ? view.video : clamp(view.video, row.min, row.max);
+    stage.style.setProperty("--left", `${actualLeft}%`);
+    stage.style.setProperty("--video", `${actualVideo}%`);
+    stage.style.setProperty("--reading-size", `${fontSize}px`);
+    $("description").textContent = descriptions[selected];
+    $("fontSize").value = String(fontSize);
+    for (const button of document.querySelectorAll("[data-preset]")) button.setAttribute("aria-pressed", String(button.dataset.preset === selected));
+    for (const [id, visible, label] of [["toggleCall", view.call, "call"], ["toggleTranscript", view.transcript, "transcript"]]) {
+      $(id).textContent = `${visible ? "Hide" : "Show"} ${label}`;
+      $(id).setAttribute("aria-pressed", String(visible));
+    }
+    const column = $("columnDivider");
+    column.setAttribute("aria-orientation", isNarrow() ? "horizontal" : "vertical");
+    column.setAttribute("aria-label", isNarrow() ? "Media area above coach; resize in a wider window" : "Resize call area and coach");
+    column.setAttribute("aria-disabled", String(isNarrow()));
+    column.tabIndex = isNarrow() ? -1 : 0;
+    column.setAttribute("aria-valuemin", String(Math.round(col.min)));
+    column.setAttribute("aria-valuemax", String(Math.round(col.max)));
+    column.setAttribute("aria-valuenow", String(Math.round(actualLeft)));
+    column.setAttribute("aria-valuetext", `${Math.round(actualLeft)}% for call area; ${Math.round(100 - actualLeft)}% for coach`);
+    $("rowDivider").setAttribute("aria-valuemin", String(Math.round(row.min)));
+    $("rowDivider").setAttribute("aria-valuemax", String(Math.round(row.max)));
+    $("rowDivider").setAttribute("aria-valuenow", String(Math.round(actualVideo)));
+    $("rowDivider").setAttribute("aria-valuetext", `${Math.round(actualVideo)}% for call; ${Math.round(100 - actualVideo)}% for transcript`);
+  }
+
+  const samples = {
+    interview: {
+      type: "Behavioral · experience", question: "Tell me about a difficult cross-team project and how you kept it on track.",
+      answer: `<div class="stories">
+        <article class="story"><b>Customer onboarding handoff</b><span>Use the example that shows coordination and your own contribution.</span><ul class="beats"><li>Situation: unclear ownership between operations and engineering.</li><li>Action: mapped the handoffs, agreed on owners, and reviewed blockers together.</li><li>Result: the team completed the pilot and reused the handoff checklist.</li></ul><div class="result">Keep the outcome concrete. Use only numbers you can support.</div></article>
+        <article class="story"><b>Reporting migration</b><span>An alternative if the interviewer asks about competing priorities.</span><ul class="beats"><li>Separate the launch requirements from improvements that could wait.</li><li>Describe how you raised the dependency early and agreed on the trade-off.</li><li>Connect the lesson to the responsibilities of this role.</li></ul></article>
+      </div><div class="keywords"><span class="kw">Clear ownership</span><span class="kw">Visible dependencies</span><span class="kw">Early escalation</span></div>
+      <div class="watch">Keep “I” and “we” distinct. Make your own action easy to identify.</div>
+      <details class="shape" open><summary>Answer shape &amp; likely follow-ups</summary><ul class="shapeList"><li>The constraint and what was at stake</li><li>Your decision and the trade-off</li><li>The outcome and what changed afterward</li></ul><div class="followUps"><span class="fu">What would you do differently next time?</span></div></details>`,
+      lines: [["interviewer", "Let's talk about working across teams. What kind of project have you handled recently?"], ["candidate", "I worked on a customer onboarding pilot that involved operations and engineering."], ["interviewer", "Tell me about a difficult cross-team project and how you kept it on track."], ["candidate", "The hard part was that each team had a different understanding of who owned the handoffs."], ["candidate", "I started by mapping each step with the two team leads so we could agree on ownership before the pilot."], ["interviewer", "How did you handle a blocker when the teams had different priorities?"]],
+    },
+    resume: {
+      type: "Career walkthrough · prepared answer", question: "Walk me through your background and what brings you to this role.",
+      answer: `<div class="readingLabel">YOUR PREPARED ANSWER · FICTIONAL SAMPLE</div><div class="prepared">My background sits at the intersection of operations, systems, and working with people. I started in a support role, where I learned how small gaps in a process can turn into a lot of repeated work for both customers and internal teams.
+
+In that first role, I spent time understanding how requests moved between teams. I helped maintain the team's documentation and worked with colleagues to clarify the information we needed before handing an issue over. That gave me a practical foundation in asking useful questions and following a problem through to its resolution.
+
+I then moved into an operations analyst position. The work involved reporting, reconciling information from different sources, and helping the team understand where a process was slowing down. I became more comfortable translating a broad request into specific requirements and checking that the result actually answered the original question.
+
+A project that helped me grow was a reporting migration. Different stakeholders wanted different things from the first release, and some of the source information needed review. My part was to document the current process, make the unresolved questions visible, and work with the owners to agree on what had to be ready for the pilot.
+
+More recently, I have focused on cross-team delivery. I enjoy the part where a project moves from a vague goal into a plan that people can actually use: clear responsibilities, visible dependencies, and a shared definition of what is finished. I also try to keep the documentation useful for the people who will operate the process after launch.
+
+The common thread across those roles is that I like bringing structure to a problem while staying close to the people affected by it. I can work with detailed information, but I also care about whether the resulting process makes sense in day-to-day use.
+
+That is what interests me about this opportunity. I would like to bring that combination of operational understanding, careful analysis, and collaboration to a team where improving the way work gets done is an important part of the role.</div>
+      <details class="shape"><summary>CV timeline and supporting roles</summary><ul class="shapeList"><li>Support → operations analyst → cross-team delivery</li><li>Use dated evidence from the saved CV in the live coach.</li></ul></details>`,
+      lines: [["interviewer", "Thanks for joining us. Before we get into the detail, could you give us an overview of your background?"], ["candidate", "My background sits at the intersection of operations, systems, and working with people."], ["candidate", "I started in a support role, where I learned how small gaps in a process can create repeated work."], ["interviewer", "And how did that lead you into the work you do now?"], ["candidate", "I moved into an analyst role and later began working on projects involving several teams."]],
+    },
+    design: {
+      type: "Technical · system design", question: "Design a notification service that handles retries without duplicate deliveries.",
+      answer: `<section class="technicalNotes"><b>Discussion notes</b><ul><li><b>Clarify requirements.</b> Channels, expected volume, latency target, and what “duplicate” means to the recipient.</li><li><b>Decouple delivery.</b> Validate the request, assign a stable notification ID, then enqueue the work.</li><li><b>Use idempotency.</b> Track the delivery key and state. Consider provider support and the failure window between sending and recording success.</li><li><b>Bound retries.</b> Backoff with jitter, a retry budget, and a dead-letter queue for investigation.</li><li><b>Make it observable.</b> Queue lag, send latency, retry rate, failure reasons, and delivery status.</li></ul></section>
+      <div class="keywords"><span class="kw">Idempotency key</span><span class="kw">Retry budget</span><span class="kw">Delivery state</span></div><div class="watch">State assumptions about delivery guarantees. A queue alone does not prevent repeated external effects.</div>
+      <details class="shape" open><summary>Likely follow-ups</summary><div class="followUps"><span class="fu">What happens if a worker crashes just after sending?</span><span class="fu">How would you handle a slow provider?</span><span class="fu">Do notifications need to arrive in order?</span></div></details>`,
+      lines: [["interviewer", "Let's sketch a service for sending notifications. We need to handle temporary provider failures."], ["candidate", "I'll separate accepting the request from delivering it, with a queue between the API and the workers."], ["interviewer", "What if a worker sends a message but crashes before acknowledging the job?"], ["candidate", "That creates a duplicate risk. I want to clarify whether the provider supports idempotency keys."], ["interviewer", "Assume it does for one channel, but not for every provider."], ["candidate", "Then I would make the failure window and delivery guarantee explicit for each channel, rather than promising exactly-once delivery everywhere."]],
+    },
+  };
+
+  function renderSample() {
+    const sample = samples[$("sample").value];
+    $("qtype").textContent = sample.type;
+    $("question").textContent = sample.question;
+    // All markup is fixed, fictional fixture content above; no imported/user HTML.
+    $("answer").innerHTML = sample.answer;
+    $("hint").scrollTop = 0;
+    $("transcript").replaceChildren(...sample.lines.map(([speaker, text]) => {
+      const line = document.createElement("div"), who = document.createElement("span");
+      line.className = `line ${speaker}`;
+      who.className = "who";
+      who.textContent = speaker === "interviewer" ? "Interviewer" : "You";
+      line.append(who, document.createTextNode(text));
+      return line;
+    }));
+    $("meeting").hidden = $("sample").value === "design";
+    $("board").toggleAttribute("hidden", $("sample").value !== "design");
+    for (const button of document.querySelectorAll("[data-sample]")) {
+      const active = button.dataset.sample === $("sample").value;
+      button.classList.toggle("selected", active);
+      if (active) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+      const status = button.querySelector(".qStatus");
+      if (status) status.remove();
+      if (active) { const status = document.createElement("span"); status.className = "qStatus"; status.textContent = "Now"; button.append(status); }
+    }
+    for (const button of $("hintActions").querySelectorAll("button")) {
+      button.classList.remove("on"); button.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  function reset(prop) {
+    if (prop) views[selected][prop] = defaults[selected][prop];
+    else views[selected] = { ...defaults[selected] };
+    render(); save();
+  }
+  function resize(prop, value) {
+    const bounds = prop === "left" ? columnBounds() : rowBounds();
+    views[selected][prop] = clamp(value, bounds.min, bounds.max);
+    render();
+  }
+  function setupDivider(id, prop) {
+    const divider = $(id);
+    let drag = null;
+    divider.addEventListener("pointerdown", event => {
+      if (isNarrow() || event.button !== 0) return;
+      const rect = (prop === "left" ? $("stage") : $("mediaColumn")).getBoundingClientRect();
+      drag = { id: event.pointerId, rect };
+      divider.setPointerCapture(event.pointerId);
+      document.body.style.setProperty("--drag-cursor", prop === "left" ? "col-resize" : "row-resize");
+      document.body.classList.add("dragging");
+      divider.focus();
+      event.preventDefault();
+    });
+    divider.addEventListener("pointermove", event => {
+      if (!drag || drag.id !== event.pointerId) return;
+      const rect = drag.rect;
+      const value = prop === "left" ? (event.clientX - rect.left - 5) / rect.width * 100 : (event.clientY - rect.top - 5) / rect.height * 100;
+      resize(prop, value);
+    });
+    const finish = () => {
+      if (!drag) return;
+      drag = null;
+      document.body.classList.remove("dragging");
+      save();
+    };
+    divider.addEventListener("pointerup", finish);
+    divider.addEventListener("lostpointercapture", finish);
+    divider.addEventListener("pointercancel", finish);
+    divider.addEventListener("dblclick", () => { if (!isNarrow()) reset(prop); });
+    divider.addEventListener("keydown", event => {
+      if (isNarrow()) return;
+      const previous = prop === "left" ? "ArrowLeft" : "ArrowUp";
+      const next = prop === "left" ? "ArrowRight" : "ArrowDown";
+      if (![previous, next, "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const bounds = prop === "left" ? columnBounds() : rowBounds();
+      const value = event.key === "Home" ? bounds.min : event.key === "End" ? bounds.max : Number(divider.getAttribute("aria-valuenow")) + (event.key === previous ? -1 : 1) * (event.shiftKey ? 5 : 2);
+      resize(prop, value); save();
+    });
+  }
+  for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
+    selected = button.dataset.preset; render(); save();
+  });
+  for (const button of document.querySelectorAll("[data-sample]")) button.addEventListener("click", () => {
+    $("sample").value = button.dataset.sample; renderSample();
+  });
+  for (const button of $("hintActions").querySelectorAll("button")) button.addEventListener("click", () => {
+    const active = button.getAttribute("aria-pressed") !== "true";
+    for (const other of $("hintActions").querySelectorAll("button")) {
+      other.classList.toggle("on", other === button && active);
+      other.setAttribute("aria-pressed", String(other === button && active));
+    }
+  });
+  $("fontSize").addEventListener("change", () => { fontSize = Number($("fontSize").value); render(); save(); });
+  $("sample").addEventListener("change", renderSample);
+  $("toggleCall").addEventListener("click", () => { views[selected].call = !views[selected].call; render(); save(); });
+  $("toggleTranscript").addEventListener("click", () => { views[selected].transcript = !views[selected].transcript; render(); save(); });
+  $("reset").addEventListener("click", () => reset());
+  $("about").addEventListener("click", () => $("findings").showModal());
+  $("closeNotes").addEventListener("click", () => $("findings").close());
+  setupDivider("columnDivider", "left"); setupDivider("rowDivider", "video");
+  window.addEventListener("resize", render);
+  renderSample(); render();
+})();
+</script>
+</body>
+</html>
