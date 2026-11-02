@@ -10,6 +10,11 @@ test("a sharper reading of the same question replaces the pending entry", () => 
   assert.equal(shouldSupersede({ last: last(), hint: hint(), now: NOW, lastCandidateAt: 0 }), true);
 });
 
+test("automatic detection cannot replace an explicit capture; postponed cards follow active ones", () => {
+  assert.equal(shouldSupersede({ last: last({ explicit: true }), hint: hint(), now: NOW }), false);
+  assert.deepEqual(queueOrder([{ id: 1, status: "new" }, { id: 2, status: "answered" }, { id: 3, status: "later" }, { id: 4, status: "dismissed" }]).map(q => q.id), [1, 3, 2, 4]);
+});
+
 test("nothing to supersede when the queue is empty", () => {
   assert.equal(shouldSupersede({ last: undefined, hint: hint(), now: NOW }), false);
 });

@@ -43,3 +43,11 @@ test("fillers never schedule; candidate speaking clears pending", () => {
   s.onCandidateSpeaks();
   assert.equal(s.onUtteranceEnd(2000), null);
 });
+
+test("explicit capture bypasses automatic delay but never overlaps an active request", () => {
+  const scheduler = new HintScheduler();
+  assert.equal(scheduler.takeManual("First selected question", 0), "First selected question");
+  assert.equal(scheduler.takeManual("Second selected question", 1), null);
+  scheduler.done(10);
+  assert.equal(scheduler.takeManual("Second selected question", 11), "Second selected question");
+});

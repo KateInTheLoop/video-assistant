@@ -68,6 +68,25 @@ stay in local browser storage, separate from candidate/job context. Layout chang
 capture and live captions running. The shared picture is a mirror; meeting and whiteboard
 interaction stays in the original tab.
 
+Use **Questions → Manual** when background speech or noise is creating unwanted questions.
+Captions continue, but automatic question requests stop. **Capture question** or **Space**
+captures the latest interviewer utterance, including live words. Space works in the focused
+coach window and respects text inputs, native controls and layout dividers. You can also
+click a transcript line (Enter/Space when focused), or select part of a line and use the
+capture button or Space. Coaching uses that selected text even when newer speech exists.
+**Automatic** remains the default, with manual capture available as an override. Your mode
+is remembered locally, independently of candidate/job settings. In Automatic mode, Space
+keeps its usual scrolling behavior unless a transcript line is focused or transcript text
+is selected.
+
+Question cards are blue for **New**, green for **Answering**, amber for **Postponed**, and
+gray for **Skipped**, with text labels as well as color. Each offers **Answer now**, **Postpone**
+and **Skip**; **Done** marks an answer finished. Postponed and skipped cards remain below active
+questions and can be resumed with **Answer now**. Captures appear immediately, before coaching
+finishes. Postponing/skipping queued captures avoids starting their coaching requests; a
+request already in progress may finish and cache its hint without replacing your selected
+card. Capturing the same utterance reopens its card rather than adding duplicates.
+
 ## What the coach knows
 Each live hint receives your enabled coach notes and selected resume summary plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5. Explicit resume requests with a prepared answer are retrieved locally.
 

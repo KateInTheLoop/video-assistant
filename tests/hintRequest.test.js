@@ -4,6 +4,14 @@ import { buildPrewarmRequest, buildHintRequest, lastHintText } from "../lib/hint
 
 const ctx = { model: "claude-opus-5-5", stories: [{ title: "A", situation: "s", action: "a", result: "r" }], jobDescription: "JD", cvText: "CV" };
 
+test("an older captured question is explicit in the request, separate from newer transcript context", () => {
+  const automatic = buildHintRequest({ ...ctx, transcript: [] });
+  const selected = buildHintRequest({ ...ctx, question: "Explain queue retries", questionSource: "transcript", transcript: [{ speaker: "interviewer", text: "A newer question about databases" }] });
+  assert.deepEqual(selected.system, automatic.system);
+  assert.match(selected.messages[0].content, /Selected utterance \(explicitly captured by the candidate\):\nExplain queue retries/);
+  assert.match(selected.messages[0].content, /transcript only as background/);
+});
+
 test("stable context sits before the cache breakpoint; transcript only in messages", () => {
   const a = buildHintRequest({ ...ctx, transcript: [{ speaker: "interviewer", text: "Tell me about A?", t: 1 }] });
   const b = buildHintRequest({ ...ctx, transcript: [{ speaker: "interviewer", text: "Different question?", t: 2 }] });
