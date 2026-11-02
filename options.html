@@ -5,8 +5,8 @@
 <title>Interview Coach – Settings</title>
 <link rel="stylesheet" href="panel.css">
 <style>
-  html, body { height: auto; overflow: auto; }
-  body { padding: 0 clamp(14px, 3vw, 28px) 40px; max-width: 900px; margin: 0 auto; font-size: 15px; }
+  html { height: auto; overflow: auto; }
+  body { height: auto; overflow: visible; display: block; padding: 0 clamp(14px, 3vw, 28px) 40px; max-width: 900px; margin: 0 auto; font-size: 15px; }
   h1 { font-size: 22px; margin: 18px 0 8px; }
   h2 { margin: 28px 0 8px; font-size: 17px; padding-top: 8px; border-top: 1px solid var(--line); }
   .pane > h2:first-of-type { border-top: none; margin-top: 16px; }
@@ -18,14 +18,44 @@
   .story-card { background: var(--panel); border: 1px solid #262a35; border-radius: 8px; padding: 12px; margin: 10px 0; }
   .story-card .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .story-card textarea { min-height: 70px; }
-  .res-card { display: grid; grid-template-columns: 220px 1fr auto; gap: 10px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 8px 0; }
-  .res-card textarea { min-height: 90px; }
-  .res-controls label:first-child { margin-top: 0; }
+  .res-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .res-card textarea, .resource-text { width: 100%; min-height: 140px; }
+  .res-card > button { justify-self: start; }
+  .resource-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; min-width: 0; font-size: 16px; font-weight: 600; }
+  .resource-heading h3 { margin: 0; font-size: inherit; }
+  .resource-badge { display: inline-block; border: 1px solid #335143; border-radius: 999px; padding: 4px 9px; background: #1b2a24; color: var(--accent); font-size: 12px; font-weight: 500; line-height: 1.4; }
+  .resource-purpose { margin: 0; color: var(--muted); line-height: 1.5; font-size: 14px; }
+  .res-controls { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .res-controls label, .res-field { min-width: 0; margin: 0; }
+  .res-controls select { margin-top: 4px; }
+  select.resource-type { border-color: #5e8c78; background: #1b2a24; color: var(--fg); font-weight: 600; }
   .res-card small { display: block; margin-top: 6px; line-height: 1.4; }
   .res-controls input[type="range"] { padding: 6px 0; accent-color: var(--accent); }
   .res-card[data-priority="5"] { border-color: var(--accent); }
-  .res-card[data-priority="0"] { opacity: .65; }
-  @media (max-width: 640px) { .res-card { grid-template-columns: 1fr; } }
+  .res-card[data-state="truncated"], .res-card[data-state="omitted"] { border-color: var(--warn); }
+  .res-card[data-state="superseded"], .res-card[data-state="off"], .res-card[data-state="excluded"] { border-style: dashed; }
+  .res-card[data-state="superseded"] .resource-badge, .res-card[data-state="off"] .resource-badge, .res-card[data-state="empty"] .resource-badge, .res-card[data-state="excluded"] .resource-badge { background: transparent; border-color: #4a5168; color: var(--muted); }
+  .res-card[aria-current="true"], .res-card[data-state="selected"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .res-card:focus-within { border-color: #7cae96; }
+  .guidance-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0 10px; }
+  .guidance-add button { width: 100%; border-color: #5e8c78; background: #1b2a24; }
+  .guidance-add small { display: block; margin-top: 6px; line-height: 1.4; }
+  .guidance-help { margin: 8px 0; line-height: 1.5; }
+  .guidance-readiness { display: flex; gap: 16px; justify-content: space-between; align-items: center; border: 1px solid #335143; border-radius: 8px; padding: 12px 14px; margin: 12px 0; background: var(--panel); }
+  .guidance-readiness .status { margin: 0; }
+  .guidance-readiness .status + .status { margin-top: 6px; }
+  .guidance-readiness button { flex: none; }
+  #guidanceHeading { scroll-margin-top: 100px; }
+  #resumePreview { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; margin: 14px 0; }
+  #resumePreview > summary { color: var(--fg); }
+  #resumePreviewText { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; max-height: 360px; overflow: auto; margin: 10px 0; }
+  #resumePreviewScope { display: block; margin-bottom: 8px; }
+  :is(input, textarea, select, button, summary):focus-visible, #guidanceHeading:focus { outline: 2px solid var(--accent); outline-offset: 3px; }
+  @media (max-width: 640px) {
+    .res-controls, .guidance-actions { grid-template-columns: minmax(0, 1fr); }
+    .res-card { padding: 12px; }
+    .guidance-readiness { align-items: stretch; flex-direction: column; gap: 12px; }
+  }
   details > summary { cursor: pointer; color: var(--muted); padding: 8px 0; }
   details.block { border-top: 1px solid var(--line); margin-top: 20px; }
   details.block > summary { font-size: 17px; color: var(--fg); font-weight: 600; padding: 14px 0 6px; }
@@ -124,6 +154,15 @@
 <small>One candidate and one job are active at a time; the coach uses exactly that pair. Each material can follow the candidate or belong to the selected job. Fill them in on the Content tab. A name or title typed there becomes the label here.</small>
 <div id="profileBusy" class="status" role="status"></div>
 <div id="ctxTotal" class="status hero"></div>
+<div class="guidance-readiness" aria-label="Interview guidance readiness">
+  <div>
+    <b>Guidance in these settings</b>
+    <p id="guidanceStatus" class="status" role="status"></p>
+    <p id="resumeReadyStatus" class="status" role="status"></p>
+    <small>Preview of the current settings. Changes reach the coach after saving.</small>
+  </div>
+  <button id="btnReviewGuidance">Review interview guidance</button>
+</div>
 <small>Keys and saved transcripts are stored locally. Captured audio is sent to your selected speech provider. Live hints send recent transcript text and the candidate/job context selected by your context tier to Anthropic. Stopping a call sends the full transcript and story titles to Anthropic for the debrief. Preparation sends the CV, job description or typed answer required by that operation; PDF uploads are sent once for transcription. DOCX, ODT and text uploads are parsed locally.</small>
 </section>
 
@@ -132,21 +171,54 @@
 <h2>About you</h2>
 <div class="row">
   <div><label>Your first name (shown in transcript and as the candidate label)</label><input id="candidateName"></div>
-  <div><label>How much the coach sees <span title="Enabled coach notes are included in every tier. Lean adds stories and job; Standard adds your CV; Everything adds other enabled materials. Set an item's priority to Off to exclude it." style="cursor:help;color:var(--muted)">(?)</span></label>
+  <div><label>How much the coach sees <span title="Enabled coach notes and resume summaries are included in every tier. Lean adds stories and job; Standard adds your CV; Everything adds other enabled materials. Set an item's priority to Off to exclude it." style="cursor:help;color:var(--muted)">(?)</span></label>
     <select id="contextTier">
       <option value="lean">Lean — stories, job and coach notes</option>
       <option value="standard">Standard — plus CV</option>
       <option value="full">Everything — plus extra materials</option>
     </select></div>
 </div>
+<section id="guidanceSection" aria-labelledby="guidanceHeading">
+<h2 id="guidanceHeading" tabindex="-1">Interview guidance and materials</h2>
+<p id="guidanceContext" class="status"></p>
+<p class="guidance-help">Prioritize what matters for this interview. Notes and resume summaries stay available in every context tier.</p>
+<p class="guidance-help"><small>Changes apply to your next interview; a running interview keeps its starting notes.</small></p>
+<div class="guidance-actions">
+  <div class="guidance-add">
+    <button id="btnAddRes">Add interview notes</button>
+    <small>Steer coaching toward key topics, strengths and role connections.</small>
+  </div>
+  <div class="guidance-add">
+    <button id="btnAddResumeSummary">Add resume summary</button>
+    <small>Show your prepared resume answer exactly as written.</small>
+  </div>
+</div>
+<p class="guidance-help"><small>New items apply to this job. Use Material type to convert an existing note without changing its text. Set priority to Off to exclude an item.</small></p>
+<div class="actions">
+  <button id="btnResUpload">Upload a file</button>
+  <input id="resFile" type="file" accept=".pdf,.docx,.odt,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/plain,text/markdown" style="display:none">
+  <span id="resStatus" class="status"></span>
+</div>
+<details id="resumePreview" hidden>
+  <summary>Preview the answer selected for resume questions</summary>
+  <pre id="resumePreviewText"></pre>
+  <small id="resumePreviewScope"></small>
+</details>
+<div id="resBox">
+  <p id="resSummary" class="status">Add materials</p>
+  <div id="resources"></div>
+  <p id="resBudget" class="status" role="status"></p>
+</div>
+</section>
+
+<h2>CV</h2>
 <small>The CV is the ground truth: stories are drafted from it and it is sent to Claude with every hint so it can point at your real experience. Upload a file or paste text; either way you get editable plain text here, the most token-efficient form for Claude. DOCX, ODT and text files are read locally and never leave the machine; a PDF is transcribed once by Claude (a few seconds). Old .doc files and Google Docs: download as .docx first.</small>
-<label>CV</label>
 <div class="actions" style="margin-top:0">
   <button id="btnCvUpload">Upload CV (PDF, DOCX, ODT, TXT, MD)</button>
   <input id="cvFile" type="file" accept=".pdf,.docx,.odt,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/plain,text/markdown" style="display:none">
   <span id="cvStatus" class="status"></span>
 </div>
-<textarea id="cvText" placeholder="Upload a file above, or paste your CV here as plain text"></textarea>
+<textarea id="cvText" aria-label="CV" placeholder="Upload a file above, or paste your CV here as plain text"></textarea>
 <div class="actions">
   <button id="btnExtract" class="primary">Draft stories from CV with Claude</button>
   <span id="extractStatus" class="status"></span>
@@ -186,20 +258,6 @@
 </div>
 <small>Claude reads the job description against your story bank and lists the questions it makes likely. A ⚠ line is a gap: a probable question with no story behind it. Those are the ones to prepare; during the call a question with no matching story is flagged the same way.</small>
 <ul id="likely"></ul>
-
-<h2>Interview guidance and materials</h2>
-<small>Your knowledge of this interview comes first: expected technical topics, skills to emphasize, and links between this role and your experience. Coach notes default to Must focus; other materials default to Relevant. Use the 0–5 slider to set emphasis (0 = Off), and choose whether each item applies to this job or follows the candidate across all jobs. New notes belong to this job. Notes are included in every context tier; other materials require Everything. Guidance shapes technical notes, career overviews, story selection and likely questions while keeping factual claims grounded.</small>
-<details id="resBox">
-  <summary id="resSummary">Add materials</summary>
-  <div id="resources"></div>
-  <div class="actions">
-    <button id="btnAddRes">Add interview notes</button>
-    <button id="btnResUpload">Upload a file</button>
-    <input id="resFile" type="file" accept=".pdf,.docx,.odt,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/plain,text/markdown" style="display:none">
-    <span id="resStatus" class="status"></span>
-  </div>
-  <p id="resBudget" class="status" role="status"></p>
-</details>
 
 <h2>What the coach sees</h2>
 <small>The reusable context sent with live hints, including the response format. Sizes use a rough four-characters-per-token estimate; the model's tokenizer can give a different count. Count with API measures a sample hint with an empty transcript. We request one-hour caching for unchanged context; cache hits depend on the provider. New transcript text, interview history and generated answers are billed separately. See Diagnostics for actual cache reads.</small>

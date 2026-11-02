@@ -284,3 +284,111 @@ test("years questions show role-window caveats and undated followups remain unkn
   assert.match(h.$("careerRole").children[0].textContent, /CV mentions \(dates not established\):\nWorkday/);
   assert.equal(h.run("gapQuestions().length"), 0);
 });
+
+test("a prepared resume answer appears verbatim immediately without a Claude rewrite", async () => {
+  const text = "  I have over twelve years of reporting experience.\n\nCurrently I support close activities.\nEarlier I worked in operations.  ";
+  let calls = 0;
+  const h = await panelHarness({ loadSettings: async () => ({ deepgramKey: "example", stories: [],
+    cvText: "Analyst January 2020 - December 2022\nExample Company\n- Supported reporting", resources: [
+      { kind: "notes", priority: 5, text: "Synthetic technical notes ".repeat(2000) },
+      { kind: "resume_summary", scope: "job", priority: 1, text }] }),
+    getHint: async () => { calls++; throw new Error("A prepared answer must not require Claude"); },
+  });
+  await h.$("btnMic").onclick();
+  h.connections[0].opts.onFinal({ speaker: "interviewer", text: "Walk me through your resume", speechFinal: true });
+  await h.run("requestHint()");
+  assert.equal(calls, 0);
+  assert.equal(h.$("resumeAnswerBox").hidden, false);
+  assert.equal(h.$("resumeAnswerText").textContent, text);
+  assert.equal(h.$("careerOverview").children.length, 0);
+  assert.equal(h.$("careerTimelineDetails").open, false);
+  assert.equal(h.$("careerRoles").children.length, 1);
+  assert.equal(h.run("questions.length"), 1, "the local answer is a real queue entry");
+  assert.equal(h.run("lastHint.question_type"), "career_walkthrough");
+  assert.equal(h.run("scheduler.inFlight"), false);
+  assert.equal(h.$("gapNotice").hidden, true);
+  h.$("careerTimelineDetails").open = true;
+  h.run("renderHint(questions[0].hint)");
+  assert.equal(h.$("careerTimelineDetails").open, true, "refresh keeps the candidate's expanded timeline");
+});
+
+test("a Lean answer needs no CV and stays bound to the session's candidate/job", async () => {
+  const initial = { deepgramKey: "example", stories: [], contextTier: "lean", cvText: "",
+    resources: [{ kind: "resume_summary", scope: "job", text: "Prepared for Example Job A" }] };
+  const h = await panelHarness({ loadSettings: async () => initial,
+    getHint: async () => { throw new Error("Must remain local"); } });
+  await h.$("btnMic").onclick();
+  h.context.futureSettings = { ...initial, resources: [{ kind: "resume_summary", scope: "job", text: "Prepared for Example Job B" }] };
+  h.run('nextSettings = futureSettings; scheduler.pending = "Tell me about yourself"');
+  await h.run("requestHint()");
+  assert.equal(h.$("resumeAnswerText").textContent, "Prepared for Example Job A");
+  assert.equal(h.$("careerRoles").children.length, 0);
+  await h.$("btnStop").onclick();
+  await h.$("btnMic").onclick();
+  assert.equal(h.$("resumeAnswerBox").hidden, true);
+  assert.equal(h.$("resumeAnswerText").textContent, "");
+  h.run('scheduler.pending = "Tell me about yourself"');
+  await h.run("requestHint()");
+  assert.equal(h.$("resumeAnswerText").textContent, "Prepared for Example Job B");
+});
+
+test("Off summaries and ordinary notes do not replace the CV-based fallback", async () => {
+  let calls = 0;
+  const h = await panelHarness({ loadSettings: async () => ({ deepgramKey: "example", stories: [], resources: [
+    { kind: "resume_summary", text: "Disabled ready answer", priority: 0 },
+    { kind: "notes", text: "Ordinary advice is not an exact resume script" }],
+  }), getHint: async () => { calls++; return { hint: { is_question: true, question_type: "career_walkthrough", question_summary: "Career summary",
+    career_overview: ["CV-grounded opening cue"], stories: [], keywords: [] }, usage: {}, ms: 1 }; } });
+  await h.$("btnMic").onclick();
+  h.run('scheduler.pending = "Walk me through your resume"');
+  await h.run("requestHint()");
+  assert.equal(calls, 1);
+  assert.equal(h.$("resumeAnswerBox").hidden, true);
+  assert.equal(h.$("careerOverview").children.length, 1);
+  assert.equal(h.$("careerTimelineDetails").open, true);
+});
+
+test("model-recognized walkthroughs keep the prepared answer and other question modes hide it", async () => {
+  const text = "My exact prepared opening.\n\nMy own closing paragraph.";
+  const h = await panelHarness({ loadSettings: async () => ({ deepgramKey: "example", stories: [], resources: [{ kind: "resume_summary", text }] }),
+    getHint: async ({ question }) => ({ hint: question.includes("SQL")
+      ? { is_question: true, question_type: "topic_experience", experience_topic: "SQL", question_summary: "SQL experience", stories: [], keywords: [] }
+      : question.includes("debit") ? { is_question: true, question_type: "technical", question_summary: "Debit and credit", technical_points: ["Debit is a left-side entry"], stories: [], keywords: [] }
+      : { is_question: true, question_type: "career_walkthrough", question_summary: "Career intro", career_overview: ["A competing generated summary"], keywords: ["Competing emphasis"], answer_shape: ["Different structure"], stories: [] }, usage: {}, ms: 1 }),
+  });
+  await h.$("btnMic").onclick();
+  h.run('scheduler.pending = "Could I get an introduction to your work?"');
+  await h.run("requestHint()");
+  assert.equal(h.$("resumeAnswerText").textContent, text);
+  assert.equal(h.$("careerOverview").children.length, 0);
+  assert.equal(h.$("keywords").children.length, 0);
+  for (const question of ["What is debit versus credit?", "Tell me about your experience with SQL", "Walk me through your background with SQL", "Give an overview of your career in finance"]) {
+    h.context.nextQuestion = question;
+    h.run('scheduler.lastFiredAt = -Infinity; scheduler.pending = nextQuestion');
+    await h.run("requestHint()");
+    assert.equal(h.$("resumeAnswerBox").hidden, true);
+    assert.equal(h.$("resumeAnswerText").textContent, "");
+  }
+});
+
+test("a failed earlier stream cannot overwrite the locally retrieved resume answer", async () => {
+  let staleFrame;
+  const h = await panelHarness({ loadSettings: async () => ({ deepgramKey: "example", stories: [], resources: [{ kind: "resume_summary", text: "Exact prepared answer" }] }),
+    getHint: async ({ onPartial }) => {
+      onPartial({ is_question: true, question_type: "technical", question_summary: "Old technical question", stories: [], keywords: [], technical_points: ["Old technical content"] });
+      staleFrame = h.timers.get(h.run("partialFrame"));
+      throw new Error("Simulated prior stream failure");
+    },
+  });
+  await h.$("btnMic").onclick();
+  h.run('scheduler.pending = "What is debit?"');
+  await h.run("requestHint()");
+  assert.equal(typeof staleFrame, "function");
+  assert.equal(h.run("partialFrame"), 0);
+  h.run('scheduler.lastFiredAt = -Infinity; scheduler.pending = "Walk me through your resume"');
+  await h.run("requestHint()");
+  staleFrame();
+  assert.equal(h.$("resumeAnswerBox").hidden, false);
+  assert.equal(h.$("resumeAnswerText").textContent, "Exact prepared answer");
+  assert.equal(h.run("lastHint.question_type"), "career_walkthrough");
+});

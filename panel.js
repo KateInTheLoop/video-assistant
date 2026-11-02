@@ -15,7 +15,8 @@ import { provisionalHint, hasStoryGap } from "./lib/hintSchema.js";
 import { careerTimeline, isCareerWalkthrough } from "./lib/careerTimeline.js";
 import { experienceIntent, routeQuestionHint } from "./lib/experienceContext.js";
 import { topicTimeline, topicMatches, experienceDuration, quoteFromRole } from "./lib/experienceTimeline.js";
-import { tierIncludes } from "./lib/context.js";
+import { tierIncludes, materialOwner } from "./lib/context.js";
+import { preparedResume } from "./lib/preparedResume.js";
 import { captionSummary } from "./lib/sttLatency.js";
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,7 @@ const ui = {
   careerRole: $("careerRole"), careerProgress: $("careerProgress"), careerPrev: $("careerPrev"), careerNext: $("careerNext"),
   careerSlider: $("careerSlider"), careerOrder: $("careerOrder"), careerClose: $("careerClose"),
   careerAllRoles: $("careerAllRoles"),
+  resumeAnswerBox: $("resumeAnswerBox"), resumeAnswerScope: $("resumeAnswerScope"), resumeAnswerText: $("resumeAnswerText"), careerDetails: $("careerTimelineDetails"),
   careerTitle: $("careerTitle"), experienceDuration: $("experienceDuration"), experienceExamples: $("experienceExamples"), experienceStories: $("experienceStories"),
 };
 
@@ -191,21 +193,38 @@ async function requestHint() {
     if (!scheduler.inFlight && scheduler.pending) schedule({ fireInMs: scheduler.nextDelay(Date.now()) });
     return;
   }
+  if (partialFrame) cancelAnimationFrame(partialFrame);
+  partialFrame = 0; pendingPartial = null;
   const t0 = performance.now();
   const sinceFinal = trace.since("stt.final");
   trace.mark("hint.request", { chars: q.length, sinceSttFinalMs: sinceFinal, model: settings.model });
   let res = null;
   let shownPartial = false;
+  let preparedHint = null;
   const topicIntent = experienceIntent(q, lastHint);
-  const route = (hint) => routeQuestionHint(hint, q, lastHint);
+  const route = (hint) => {
+    const routed = routeQuestionHint(hint, q, lastHint);
+    return routed?.question_type === "career_walkthrough" && preparedResume(settings.resources)
+      ? { ...routed, career_overview: [], keywords: [], answer_shape: [], watch_out: "" } : routed;
+  };
   if (topicIntent || isCareerWalkthrough(q)) {
-    renderHint(route({ is_question: true, question_summary: topicIntent ? `Experience with ${topicIntent.topic}` : "Walk through your career", question_type: "career_walkthrough",
-      career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" }), { partial: true });
+    const preview = route({ is_question: true, question_summary: topicIntent ? `Experience with ${topicIntent.topic}` : "Walk through your career", question_type: "career_walkthrough",
+      career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" });
+    if (preview.question_type === "career_walkthrough" && preparedResume(settings.resources)) preparedHint = preview;
+    else renderHint(preview, { partial: true });
     shownPartial = true;
   }
   const titles = settings.stories.map((s) => s.title);
   setHintState("Analysing\u2026");
   try {
+    if (preparedHint) {
+      const hint = route(validateHint(preparedHint, titles).hint);
+      addQuestion(hint); lastHint = hint;
+      setHintState("");
+      setStatus("Showing your prepared resume answer");
+      trace.mark("hint.prepared", { kind: "resume_summary", ms: Math.round(performance.now() - t0) });
+      return;
+    }
     res = await getHint({
       apiKey: settings.anthropicKey, model: settings.model, transcript, question: q,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
@@ -238,6 +257,8 @@ async function requestHint() {
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
     if (version !== sessionVersion) return;
+    if (partialFrame) cancelAnimationFrame(partialFrame);
+    partialFrame = 0; pendingPartial = null;
     trace.mark("hint.error", { ms: Math.round(performance.now() - t0), error: e.message });
     setHintState(e.message, true);
     setStatus(e.message, true);
@@ -267,6 +288,7 @@ function clearHintCard() {
   ui.gapNotice.hidden = true; ui.shapeBox.hidden = true; ui.cvLeads.hidden = true;
   ui.technicalNotes.hidden = true; ui.technicalPoints.innerHTML = "";
   ui.career.hidden = true; ui.stories.hidden = false;
+  ui.resumeAnswerBox.hidden = true; ui.resumeAnswerText.textContent = "";
 }
 
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
@@ -364,6 +386,7 @@ let careerView = { key: "", index: 0, newest: false };
 let careerCv = null, allCareerRoles = [], careerRoles = [];
 let experienceHint = null;
 let experienceQuestionHint = null;
+let displayedResume = null;
 
 function usedStoryButton(question, title) {
   const button = document.createElement("button"); button.className = "small";
@@ -392,7 +415,11 @@ function preparedExample(story) {
 function renderCareer(h) {
   const topicMode = h.question_type === "topic_experience";
   ui.career.hidden = !topicMode && h.question_type !== "career_walkthrough";
+  const prepared = !ui.career.hidden && !topicMode ? preparedResume(settings.resources) : null;
+  ui.resumeAnswerBox.hidden = !prepared;
+  ui.resumeAnswerText.textContent = prepared?.text || "";
   if (ui.career.hidden) return;
+  ui.resumeAnswerScope.textContent = prepared ? `${materialOwner(prepared) === "job" ? "For this job" : "For this candidate, across jobs"} · Shown as you saved it` : "";
   if (careerCv !== settings.cvText) {
     careerCv = settings.cvText || "";
     allCareerRoles = careerTimeline(careerCv);
@@ -400,6 +427,8 @@ function renderCareer(h) {
   const previous = (careerView.newest ? [...careerRoles].reverse() : careerRoles)[careerView.index]?.roleIndex;
   const key = h.career_key || h.question_summary;
   const sameQuestion = careerView.key === key;
+  if (!sameQuestion || displayedResume !== prepared) ui.careerDetails.open = !prepared;
+  displayedResume = prepared;
   if (!sameQuestion) careerView = { key, index: 0, newest: false };
   const evidence = tierIncludes(settings.contextTier).cvText ? h.experience_evidence || [] : [];
   const entries = topicMode ? topicTimeline(allCareerRoles, h.experience_topic || "", evidence) : [];
@@ -415,11 +444,12 @@ function renderCareer(h) {
   ui.careerTitle.textContent = topicMode ? `Experience with ${h.experience_topic || "the requested topic"}` : "Career walkthrough";
   ui.careerOrder.value = careerView.newest ? "newest" : "oldest";
   ui.careerOverview.innerHTML = "";
-  for (const cue of (topicMode ? h.experience_outline : h.career_overview) || []) {
+  for (const cue of (prepared ? [] : topicMode ? h.experience_outline : h.career_overview) || []) {
     const li = document.createElement("li"); li.textContent = cue; ui.careerOverview.appendChild(li);
   }
   const first = careerRoles[0], last = careerRoles.at(-1);
-  ui.careerSummary.textContent = topicMode ? first
+  ui.careerSummary.textContent = prepared ? "Use your prepared answer above. Open the CV timeline for supporting roles and follow-up details."
+    : topicMode ? first
     ? `${careerRoles.length} relevant roles · ${first.from} → ${last.to}. Connect early exposure, development and recent work to this job.`
     : "No dated role evidence found for this topic yet. Check the source mentions and prepared examples; missing dates do not establish no experience."
     : first
@@ -508,6 +538,7 @@ function renderHint(h, { partial = false } = {}) {
   ui.hintState.textContent = partial ? "\u2026" : "";
   ui.hintState.className = "hintState";
   const typeLabel = h.question_type === "career_walkthrough" ? "Career walkthrough" : h.question_type === "topic_experience" ? "Experience storyline" : h.question_type;
+  const usingPrepared = h.question_type === "career_walkthrough" && preparedResume(settings.resources);
   ui.qtype.textContent = h.follow_up ? `${typeLabel} \u00b7 follow-up` : typeLabel;
   ui.question.textContent = h.question_summary;
   renderCareer(h);
@@ -544,11 +575,11 @@ function renderHint(h, { partial = false } = {}) {
     ui.stories.appendChild(el);
   }
   ui.keywords.innerHTML = "";
-  for (const k of h.keywords) {
+  for (const k of usingPrepared ? [] : h.keywords) {
     const el = document.createElement("span"); el.className = "kw"; el.textContent = k;
     ui.keywords.appendChild(el);
   }
-  ui.watch.textContent = h.watch_out;
+  ui.watch.textContent = usingPrepared ? "" : h.watch_out;
 
   // A question with no story behind it is the thing the candidate most needs to know,
   // both live (improvise honestly, do not stall) and afterwards (a gap to prepare).
@@ -563,7 +594,7 @@ function renderHint(h, { partial = false } = {}) {
                : "Your story bank is empty, so there is nothing to point at. Hints stay generic until you add stories.");
   }
 
-  const shape = h.answer_shape || [];
+  const shape = usingPrepared ? [] : h.answer_shape || [];
   const ups = h.follow_ups || [];
   ui.answerShape.innerHTML = "";
   for (const s of shape) {

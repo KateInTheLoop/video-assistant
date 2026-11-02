@@ -24,6 +24,7 @@ export async function browserHarness(file, overrides = {}) {
       append(...els) { children.push(...els); }, appendChild(el) { children.push(el); },
       querySelector(sel) { if (!selectors.has(sel)) selectors.set(sel, element()); return selectors.get(sel); },
       querySelectorAll() { return []; }, click() {}, scrollIntoView() {},
+      focus() { globals.document.activeElement = this; },
       dispatchEvent(ev) { for (const fn of listeners.get(ev.type) || []) fn({ ...ev, target: this }); },
     };
   }

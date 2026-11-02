@@ -56,8 +56,8 @@ test("handles separate date lines, abbreviated dates, years-only ranges and no s
 });
 
 test("explicit resume questions route to a career walkthrough, not a story shortlist", () => {
-  for (const text of ["Can you walk me through your resume?", "Walk us through your CV", "Give an overview of your career", "Take me through your professional experience"]) assert.equal(isCareerWalkthrough(text), true, text);
-  for (const text of ["Walk me through a bank reconciliation", "What is debit versus credit?", "Tell me about a conflict"]) assert.equal(isCareerWalkthrough(text), false, text);
+  for (const text of ["Can you walk me through your resume?", "Walk us through your CV", "Give an overview of your career", "Take me through your professional experience", "Tell me about yourself", "Tell us about your background?", "Tell me about your resume", "Describe your career.", "Tell me a little bit about yourself.", "Tell me about yourself, please.", "Please introduce yourself."]) assert.equal(isCareerWalkthrough(text), true, text);
+  for (const text of ["Walk me through a bank reconciliation", "What is debit versus credit?", "Tell me about a conflict", "Tell me about your background with SQL", "Tell me about a time you introduced yourself"]) assert.equal(isCareerWalkthrough(text), false, text);
   const routed = routeCareerHint({ is_question: true, question_type: "experience", stories: [{ title: "One story" }] }, "Walk me through your resume");
   assert.equal(routed.question_type, "career_walkthrough");
   assert.deepEqual(routed.stories, []);

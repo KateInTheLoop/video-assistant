@@ -4,11 +4,25 @@ Live captions for a video interview plus structure hints grounded in the candida
 Experience questions receive short cues grounded in your own stories and CV. Technical knowledge questions receive concise factual explanations and examples from the model's general knowledge, calibrated to the CV and job. They work without a matching story, including with an empty story bank.
 The optional "answer shape" panel names what a strong answer covers and the follow-ups to expect; it never writes words to read aloud.
 
-"Walk me through your resume" opens a career walkthrough: opening overview cues and every
-dated CV role, oldest to newest, with a role slider, Previous/Next, direct role selection,
-and an option to reverse the order. Role dates, employers and duties come directly from the
-uploaded CV, independently of the model's story shortlist. The timeline appears before the
-model finishes its overview. An unrecognized CV layout shows the source text for review.
+For a prepared resume opening, choose **Content → Interview guidance and materials → Add
+resume summary** and paste your exact answer. It defaults to **This job** and **Must focus**;
+use candidate scope for a general answer. An existing note can become a **Resume summary /
+prepared answer** through its Material type dropdown without losing its text. Enabled summaries
+are available in every context tier. Highest priority wins among summaries; this-job scope
+wins ties, then the first saved entry. Off summaries are excluded.
+
+Guidance cards stay visible at the top of Content. Each card names its purpose, scope and
+inclusion status; the active resume answer is marked **Selected for resume questions**.
+Use **Start → Review interview guidance** to jump there and preview the exact selected answer.
+The preview reflects your current settings. Check the saving status before starting a new
+interview; a running interview keeps the context it started with.
+
+"Walk me through your resume" or "Tell me about yourself" displays the selected answer
+immediately, exactly as saved, without a Claude rewrite. The complete CV timeline is available
+under **CV timeline and supporting roles**. Without a prepared answer, the walkthrough shows
+generated opening cues and every dated CV role, oldest to newest, with a role slider,
+Previous/Next, direct selection and an option to reverse the order. Role dates, employers and
+duties come directly from the CV. An unrecognized layout shows the source text for review.
 
 "Tell me about your experience with X" opens a topic-specific storyline with relevant roles
 in chronological order, exact CV evidence, connected prepared examples and short cues linking
@@ -38,7 +52,7 @@ The application supplies the response schema and enforces evidence checks separa
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
 
 ## What the coach knows
-Each live hint receives your enabled coach notes plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5.
+Each live hint receives your enabled coach notes and selected resume summary plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5. Explicit resume requests with a prepared answer are retrieved locally.
 
 In **Interview guidance and materials**, use **Add interview notes** to tell the coach what
 you expect: likely technical domains, skills worth emphasizing, and links between your work

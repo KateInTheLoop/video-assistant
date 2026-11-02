@@ -12,6 +12,7 @@ import { addCandidate, addJob, duplicateCandidate, duplicateJob, removeCandidate
 import { checkDeepgramKey } from "./stt.js";
 import { checkAssemblyAiKey } from "./stt-assemblyai.js";
 import { checkAnthropicKey } from "./claude.js";
+import { preparedResume } from "./lib/preparedResume.js";
 
 const $ = (id) => document.getElementById(id);
 const statusActivities = new WeakMap();
@@ -166,47 +167,103 @@ function renderStories() {
 }
 
 const resourceStatuses = new Map();
+const resourceViews = new Map();
+let resumePreviewKey = "";
+
+function resourceScope(resource) {
+  return materialOwner(resource) === "job" ? `This job: ${jobLabel(profiles?.jobs?.[profiles.activeJob])}`
+    : `${candidateLabel(profiles?.candidates?.[profiles.activeCandidate])} — all jobs`;
+}
+
+function renderGuidanceReadiness(plan, selected) {
+  const entries = new Map(plan.entries.map(entry => [entry.resource, entry]));
+  const notes = resources.filter(r => r.kind === "notes" && r.text?.trim() && materialPriority(r) > 0);
+  const full = notes.filter(r => entries.get(r)?.status === "included").length;
+  const partial = notes.filter(r => entries.get(r)?.status === "truncated").length;
+  const omitted = notes.length - full - partial;
+  const counts = [full && `${full} fully included`, partial && `${partial} partly included`, omitted && `${omitted} not included`].filter(Boolean);
+  $("guidanceStatus").textContent = notes.length ? `Interview notes in these settings: ${counts.join(" · ")}.`
+    : resources.some(r => r.kind === "notes" && r.text?.trim()) ? "Interview notes are Off. Enable a note to guide coaching."
+    : "No interview notes yet. Add likely topics and skills to emphasize.";
+  $("guidanceContext").textContent = `Preparing ${candidateLabel(profiles?.candidates?.[profiles.activeCandidate])} for ${jobLabel(profiles?.jobs?.[profiles.activeJob])}`;
+  $("resumeReadyStatus").textContent = selected ? `Resume answer selected — ${resourceScope(selected)}.`
+    : resources.some(r => r.kind === "resume_summary" && r.text?.trim()) ? "Prepared resume answers are Off. Enable one to use it during a walkthrough."
+    : "No prepared resume answer yet. Add the wording you want to use.";
+  $("resumeReadyStatus").dataset.state = selected ? "selected" : "empty";
+  const key = selected ? `${profiles?.activeCandidate}:${profiles?.activeJob}:${resources.indexOf(selected)}:${materialOwner(selected)}` : "";
+  if (key !== resumePreviewKey) $("resumePreview").open = false;
+  resumePreviewKey = key;
+  $("resumePreview").hidden = !selected;
+  $("resumePreviewText").textContent = selected?.text || "";
+  $("resumePreviewScope").textContent = selected ? `${resourceScope(selected)} · Shown word for word for resume questions` : "";
+}
+
 function renderMaterialStatus() {
   const eligible = applyTier({ resources }, $("contextTier").value).resources;
   const plan = materialPlan(eligible), statuses = new Map(plan.entries.map(e => [e.resource, e]));
+  const selected = preparedResume(eligible);
   for (const [resource, label] of resourceStatuses) {
     const entry = statuses.get(resource);
+    const state = !resource.text?.trim() ? "empty" : !materialPriority(resource) ? "off" : !entry ? "excluded" : entry.status;
+    const view = resourceViews.get(resource);
+    if (view) {
+      view.card.dataset.state = resource === selected ? "selected" : state;
+      view.badge.textContent = resource === selected ? "Selected for resume questions"
+        : state === "empty" ? "Empty draft" : state === "off" ? "Off"
+        : state === "superseded" ? "Alternate answer" : state === "included" ? "Included"
+        : state === "truncated" ? "Partly included" : "Not included";
+    }
     label.textContent = !resource.text?.trim() ? "Empty — add guidance or source text"
       : !materialPriority(resource) ? "Off — excluded from AI context"
       : !entry ? "Excluded by context tier — choose Everything to include this material"
+      : entry.status === "superseded" ? "Another prepared resume answer is selected — change priorities or set the other answer to Off"
+      : resource.kind === "resume_summary" && entry.status === "truncated" ? `AI receives an excerpt (${entry.sentChars.toLocaleString()} of ${resource.text.length.toLocaleString()} characters). The coach displays your full saved answer for a resume walkthrough.`
+      : resource.kind === "resume_summary" && entry.status === "omitted" ? "AI context budget omits this answer. The coach still displays your full saved answer for a resume walkthrough."
       : entry.status === "truncated" ? `Partially included (${entry.sentChars.toLocaleString()} characters) — shorten this material or lower other priorities`
-      : entry.status === "omitted" ? "Not included — higher-priority materials fill the context budget"
+      : entry.status === "omitted" ? "Not included — other materials fill the context budget"
       : "Included in AI context";
   }
   const active = eligible.filter(r => r.text?.trim()).length;
-  $("resBudget").textContent = `${active} active material${active === 1 ? "" : "s"}. Coach notes are included in every context tier unless set to Off. Higher priorities are included first.`
+  const included = plan.entries.filter(e => ["included", "truncated"].includes(e.status)).length;
+  $("resBudget").textContent = `${included} of ${active} enabled material${active === 1 ? "" : "s"} included in AI context. Coach notes and resume summaries are available in every context tier unless set to Off. AI context follows priority order; resume walkthroughs display your full saved answer locally.`
     + (plan.truncated ? " Some material is shortened or omitted; see the status on each card." : "");
+  renderGuidanceReadiness(plan, selected);
 }
 
 function renderResources() {
   const box = $("resources");
   box.innerHTML = "";
-  resourceStatuses.clear();
+  resourceStatuses.clear(); resourceViews.clear();
   rankedMaterials(resources).forEach(({ resource: r, index: i }, rank) => {
     const card = document.createElement("div");
     card.className = "res-card";
     card.dataset.priority = String(materialPriority(r));
+    card.dataset.kind = r.kind;
+    const heading = document.createElement("div"); heading.className = "resource-heading";
+    const title = document.createElement("h3"), badge = document.createElement("span"); badge.className = "resource-badge";
+    title.textContent = `${rank + 1}. ${r.kind === "resume_summary" ? "Prepared resume answer" : RESOURCE_KINDS.find(k => k.id === r.kind)?.label || "Other material"}`;
+    heading.append(title, badge);
+    const purpose = document.createElement("p"); purpose.className = "resource-purpose";
+    purpose.textContent = r.kind === "notes" ? "Guide the topics, skills and examples Claude should emphasize."
+      : r.kind === "resume_summary" ? "Your exact wording for resume walkthroughs and introductions."
+      : "Supporting context for coaching when Everything is selected.";
     const controls = document.createElement("div"); controls.className = "res-controls";
-    const kindLabel = document.createElement("label"); kindLabel.textContent = `${rank + 1}. Material type`;
-    const sel = document.createElement("select");
+    const kindLabel = document.createElement("label"); kindLabel.textContent = "Material type"; kindLabel.className = "res-field";
+    const sel = document.createElement("select"); sel.className = "resource-type"; sel.setAttribute("aria-label", "Material type");
     for (const k of RESOURCE_KINDS) { const o = document.createElement("option"); o.value = k.id; o.textContent = k.label; sel.appendChild(o); }
     sel.value = RESOURCE_KINDS.some((k) => k.id === r.kind) ? r.kind : "other";
-    sel.onchange = () => { resources[i].kind = sel.value; renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    sel.onchange = () => { resources[i].kind = sel.value; renderResources(); resourceViews.get(r)?.type.focus?.(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
     kindLabel.appendChild(sel);
-    const scopeLabel = document.createElement("label"); scopeLabel.textContent = "Applies to";
+    const scopeLabel = document.createElement("label"); scopeLabel.textContent = "Applies to"; scopeLabel.className = "res-field";
     const scope = document.createElement("select"); scope.setAttribute("aria-label", "Applies to");
     for (const [value, text] of [["job", "This job"], ["candidate", "Candidate — all jobs"]]) {
       const option = document.createElement("option"); option.value = value; option.textContent = text; scope.appendChild(option);
     }
     scope.value = materialOwner(r);
-    scope.onchange = () => { r.scope = scope.value; renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    scope.onchange = () => { r.scope = scope.value; renderResources(); resourceViews.get(r)?.scope.focus?.(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
     scopeLabel.appendChild(scope);
     const priorityLabel = document.createElement("label"), priorityText = document.createElement("span");
+    priorityLabel.className = "res-field";
     priorityText.textContent = `Priority ${materialPriority(r)}/5 — ${MATERIAL_PRIORITIES[materialPriority(r)]}`;
     const priority = document.createElement("input"); priority.type = "range"; priority.min = "0"; priority.max = "5"; priority.step = "1";
     priority.value = String(materialPriority(r)); priority.setAttribute("aria-label", "Material priority");
@@ -216,25 +273,39 @@ function renderResources() {
       priorityText.textContent = `Priority ${r.priority}/5 — ${MATERIAL_PRIORITIES[r.priority]}`;
       priority.setAttribute("aria-valuetext", MATERIAL_PRIORITIES[r.priority]); renderMaterialStatus();
     };
-    priority.onchange = () => { renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    priority.onchange = () => { renderResources(); resourceViews.get(r)?.priority.focus?.(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
     priority.setAttribute("aria-valuetext", MATERIAL_PRIORITIES[materialPriority(r)]);
     priorityLabel.append(priorityText, priority); controls.append(kindLabel, scopeLabel, priorityLabel);
     const ta = document.createElement("textarea");
-    ta.placeholder = r.kind === "notes" ? "Expected topics, technical domains, skills to emphasize, and links between this job and your experience…" : "Paste the source text here";
+    ta.className = "resource-text";
+    ta.setAttribute("aria-label", r.kind === "resume_summary" ? "Your prepared resume answer" : r.kind === "notes" ? "Your interview notes" : "Material source text");
+    ta.placeholder = r.kind === "resume_summary" ? "Paste your exact prepared answer to ‘Walk me through your resume’ in your own words, with the sequence and emphasis you want to use…"
+      : r.kind === "notes" ? "Expected topics, technical domains, skills to emphasize, and links between this job and your experience…" : "Paste the source text here";
     ta.value = r.text || "";
     ta.oninput = () => { resources[i].text = ta.value; renderMaterialStatus(); };
-    const content = document.createElement("div"), status = document.createElement("small");
+    const content = document.createElement("div"), status = document.createElement("small"); status.className = "resource-status";
+    if (r.kind === "resume_summary") {
+      const help = document.createElement("small");
+      help.textContent = "The selected summary appears first exactly as written for a resume walkthrough. Highest priority wins; This job wins ties. Keep This job for a tailored answer; choose Candidate — all jobs for a general summary.";
+      content.appendChild(help);
+    }
     resourceStatuses.set(r, status); content.append(ta, status);
+    resourceViews.set(r, { card, badge, editor: ta, type: sel, scope, priority });
     const del = document.createElement("button");
     del.textContent = "Remove";
-    del.onclick = () => { resources.splice(i, 1); renderResources(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
-    card.append(controls, content, del);
+    del.onclick = () => { resources.splice(i, 1); renderResources(); (resourceViews.values().next().value?.editor || $("btnAddRes")).focus?.(); $("resources").dispatchEvent(new Event("input", { bubbles: true })); };
+    card.append(heading, purpose, controls, content, del);
     box.appendChild(card);
   });
   const n = resources.filter((r) => r.text?.trim()).length;
-  $("resSummary").textContent = n ? `${n} material${n === 1 ? "" : "s"} added` : "Add materials";
-  if (resources.length) $("resBox").open = true;
+  $("resSummary").textContent = n ? `${n} material${n === 1 ? "" : "s"} added` : "Add notes or a prepared answer above to guide your next interview.";
   renderMaterialStatus();
+}
+
+function addGuidance(kind) {
+  const resource = normalizeMaterial({ kind, text: "" }, "job");
+  resources.push(resource); renderResources();
+  resourceViews.get(resource)?.editor.focus?.();
 }
 
 let countedContext = null;
@@ -558,7 +629,9 @@ async function load() {
     finally { finish(); $("btnCvUpload").disabled = false; $("cvFile").value = ""; }
   });
 
-  $("btnAddRes").onclick = () => { resources.push(normalizeMaterial({ kind: "notes", text: "" }, "job")); renderResources(); $("resBox").open = true; };
+  $("btnReviewGuidance").onclick = () => { showTab("content"); $("guidanceHeading").scrollIntoView({ block: "start" }); $("guidanceHeading").focus?.({ preventScroll: true }); };
+  $("btnAddRes").onclick = () => addGuidance("notes");
+  $("btnAddResumeSummary").onclick = () => addGuidance("resume_summary");
   $("btnResUpload").onclick = () => $("resFile").click();
   $("resFile").onchange = () => profileTask(async () => {
     const file = $("resFile").files[0]; if (!file) return;
