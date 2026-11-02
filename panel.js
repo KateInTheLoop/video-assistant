@@ -55,6 +55,9 @@ let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
 let interimNodes = {};
+let renderedTranscript = null;
+const transcriptRows = new Map(), heldTranscriptRows = new Set();
+let transcriptPointer = null, transcriptRefreshFrame = 0;
 let captionSamples = [];
 let scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
@@ -80,30 +83,86 @@ function setStatus(msg, isError = false) {
 
 // --- Transcript rendering --------------------------------------------------
 
+function protectedTranscriptRow(el) {
+  if (transcriptPointer?.el === el) return true;
+  const selection = window.getSelection?.();
+  return !!selectedTranscriptText() && (selection.containsNode?.(el, true)
+    || el.contains?.(selection.anchorNode) || el.contains?.(selection.focusNode));
+}
+
+function retainTranscriptRow(el) {
+  return protectedTranscriptRow(el) || el.contains?.(document.activeElement);
+}
+
+function followingTranscript() {
+  return !transcriptPointer && !selectedTranscriptText()
+    && ui.transcript.scrollHeight - ui.transcript.scrollTop - ui.transcript.clientHeight <= 16;
+}
+
+function updateTranscriptRow(row, text) {
+  // A selected live/merged row is a stable excerpt until the reader clears it.
+  // Other rows continue rendering and the underlying transcript keeps recording.
+  if (protectedTranscriptRow(row.el) || row.text.nodeValue === text) return;
+  row.text.nodeValue = text;
+  row.el.dataset.captureText = text;
+}
+
 function renderTranscript() {
-  ui.transcript.innerHTML = "";
-  interimNodes = {};
-  const lines = transcript.slice(-60);
-  for (const l of lines) ui.transcript.appendChild(lineEl(l.speaker, l.text, false));
-  for (const sp of ["interviewer", "candidate"]) {
-    renderInterim(sp);
+  const follow = followingTranscript();
+  if (renderedTranscript !== transcript) {
+    ui.transcript.innerHTML = "";
+    transcriptRows.clear(); heldTranscriptRows.clear(); interimNodes = {};
+    transcriptPointer = null;
+    renderedTranscript = transcript;
   }
-  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  if (transcriptPointer) { renderCaptureControls(); return; }
+  for (const el of heldTranscriptRows) if (!retainTranscriptRow(el)) { el.remove(); heldTranscriptRows.delete(el); }
+  for (const speaker of ["interviewer", "candidate"]) {
+    const node = interimNodes[speaker];
+    if (node && !interim[speaker]) {
+      if (retainTranscriptRow(node.el)) heldTranscriptRows.add(node.el);
+      else node.el.remove();
+      delete interimNodes[speaker];
+    }
+  }
+  const lines = transcript.slice(-60);
+  const retained = new Set(lines);
+  for (const [line, row] of transcriptRows) if (!retained.has(line) && !retainTranscriptRow(row.el)) { row.el.remove(); transcriptRows.delete(line); }
+  const live = Array.from(ui.transcript.children).find(el => heldTranscriptRows.has(el) || Object.values(interimNodes).some(node => node.el === el));
+  for (const line of lines) {
+    let row = transcriptRows.get(line);
+    if (!row) {
+      const el = lineEl(line.speaker, line.text, false);
+      row = { el, text: el.lastChild };
+      transcriptRows.set(line, row);
+      ui.transcript.insertBefore(el, live || null);
+    } else updateTranscriptRow(row, line.text);
+  }
+  for (const sp of ["interviewer", "candidate"]) {
+    renderInterim(sp, false);
+  }
+  if (follow) ui.transcript.scrollTop = ui.transcript.scrollHeight;
   ui.save.disabled = transcript.length === 0;
   renderCaptureControls();
 }
 
 // Interim words update one node immediately. Rebuilding all 60 history rows on every
 // partial result made fast captions unnecessarily expensive while hints were streaming.
-function renderInterim(speaker) {
-  if (!interim[speaker]) return;
+function renderInterim(speaker, follow = followingTranscript()) {
+  if (!interim[speaker] || transcriptPointer) return;
   let node = interimNodes[speaker];
   if (!node) {
     const el = lineEl(speaker, interim[speaker], true);
     node = interimNodes[speaker] = { el, text: el.lastChild };
     ui.transcript.appendChild(el);
-  } else { node.text.nodeValue = interim[speaker]; node.el.dataset.captureText = interim[speaker]; }
-  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  } else updateTranscriptRow(node, interim[speaker]);
+  if (follow) ui.transcript.scrollTop = ui.transcript.scrollHeight;
+}
+
+function refreshTranscriptAfterInteraction() {
+  if (transcriptRefreshFrame) cancelAnimationFrame(transcriptRefreshFrame);
+  // Let a row/button click consume its original text before applying buffered edits.
+  transcriptRefreshFrame = requestAnimationFrame(() => { transcriptRefreshFrame = 0; renderTranscript(); });
 }
 
 function lineEl(speaker, text, isInterim) {
@@ -1120,7 +1179,20 @@ async function stopAll() {
   ui.save.onclick = saveTranscript;
   ui.questionMode.onchange = () => setCaptureMode(ui.questionMode.value);
   ui.captureQuestion.onclick = captureLatestQuestion;
-  document.addEventListener("selectionchange", renderCaptureControls);
+  document.addEventListener("selectionchange", renderTranscript);
+  ui.transcript.onpointerdown = event => {
+    if (event.button === 0) transcriptPointer = { id: event.pointerId, el: event.target.closest?.(".line") };
+  };
+  const endTranscriptPointer = event => {
+    if (!transcriptPointer || event.pointerId !== transcriptPointer.id) return;
+    transcriptPointer = null; refreshTranscriptAfterInteraction();
+  };
+  document.addEventListener("pointerup", endTranscriptPointer);
+  document.addEventListener("pointercancel", endTranscriptPointer);
+  window.addEventListener("blur", () => {
+    if (transcriptPointer) { transcriptPointer = null; refreshTranscriptAfterInteraction(); }
+  });
+  ui.transcript.onfocusout = refreshTranscriptAfterInteraction;
   document.addEventListener("keydown", event => {
     const selected = selectedTranscriptText();
     if (!captureShortcut(event) || sessionStart === null || (captureMode !== "manual" && !selected) || !(selected || questionCapture.snapshot()?.text)) return;

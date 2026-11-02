@@ -74,6 +74,8 @@ captures the latest interviewer utterance, including live words. Space works in 
 coach window and respects text inputs, native controls and layout dividers. You can also
 click a transcript line (Enter/Space when focused), or select part of a line and use the
 capture button or Space. Coaching uses that selected text even when newer speech exists.
+Live caption updates preserve the selected excerpt and your reading position. Scroll back
+to the bottom to resume following live captions.
 **Automatic** remains the default, with manual capture available as an override. Your mode
 is remembered locally, independently of candidate/job settings. In Automatic mode, Space
 keeps its usual scrolling behavior unless a transcript line is focused or transcript text

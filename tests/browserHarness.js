@@ -24,6 +24,9 @@ export async function browserHarness(file, overrides = {}) {
       classList: { add(...names) { names.forEach(n => classes.add(n)); }, remove(...names) { names.forEach(n => classes.delete(n)); }, contains(name) { return classes.has(name); }, toggle(name, force = !classes.has(name)) { if (force) classes.add(name); else classes.delete(name); return force; } },
       append(...els) { els.forEach(el => this.appendChild(el)); },
       appendChild(el) { if (el.parentElement) { const old = el.parentElement.children, index = old.indexOf(el); if (index >= 0) old.splice(index, 1); } children.push(el); el.parentElement = this; return el; },
+      insertBefore(el, before) { if (el.parentElement) el.remove(); const index = before ? children.indexOf(before) : -1; if (index < 0) children.push(el); else children.splice(index, 0, el); el.parentElement = this; return el; },
+      remove() { if (this.parentElement) { const siblings = this.parentElement.children; siblings.splice(siblings.indexOf(this), 1); this.parentElement = null; } },
+      contains(el) { for (let node = el; node; node = node.parentElement) if (node === this) return true; return false; },
       getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight }; },
       querySelector(sel) { if (!selectors.has(sel)) selectors.set(sel, element()); return selectors.get(sel); },
       querySelectorAll() { return []; }, click() {}, scrollIntoView() {},
@@ -36,7 +39,7 @@ export async function browserHarness(file, overrides = {}) {
     console, Date, performance, URL, Blob, Event, Uint8Array, TextDecoder, structuredClone,
     document: {
       getElementById: $, createElement: element,
-      createTextNode: text => ({ textContent: text }),
+      createTextNode: text => ({ textContent: text, get nodeValue() { return this.textContent; }, set nodeValue(value) { this.textContent = value; } }),
       addEventListener(type, fn) { listeners.set(type, [...(listeners.get(type) || []), fn]); },
       dispatchEvent(ev) { for (const fn of listeners.get(ev.type) || []) fn(ev); },
     },

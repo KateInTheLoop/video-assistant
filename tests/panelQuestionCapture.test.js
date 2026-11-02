@@ -91,6 +91,89 @@ test("clicking an older transcript line sends that question instead of newer spe
   assert.equal(h.$("question").textContent, "Explain the original queue question?");
 });
 
+function selectCaption(h, row) {
+  const node = row.lastChild;
+  h.context.window.getSelection = () => ({ anchorNode: node, focusNode: node, toString: () => node.nodeValue, containsNode: el => el === row });
+}
+
+test("a selected older question survives finalized captions and captures the original text", async () => {
+  const h = await coach(); h.manual();
+  h.final("Explain the original queue question?"); h.final("A response", "candidate");
+  const row = h.$("transcript").children[0]; selectCaption(h, row);
+  h.final("A newer question about indexes?");
+  assert.equal(h.$("transcript").children[0], row);
+  assert.equal(row.parentElement, h.$("transcript"));
+  h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.equal(h.calls[0].question, "Explain the original queue question?");
+  assert.equal(h.calls[0].questionSource, "transcript");
+});
+
+test("merged updates wait for selection release without losing recorded words", async () => {
+  const h = await coach(); h.manual(); h.final("Explain retry queues");
+  const row = h.$("transcript").children[0]; selectCaption(h, row);
+  h.final("when delivery fails?");
+  assert.equal(row.lastChild.nodeValue, "Explain retry queues");
+  assert.equal(h.run("transcript[0].text"), "Explain retry queues when delivery fails?");
+  h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.equal(h.calls[0].question, "Explain retry queues");
+  h.context.window.getSelection = () => null;
+  h.context.document.dispatchEvent({ type: "selectionchange" });
+  assert.equal(row.lastChild.nodeValue, "Explain retry queues when delivery fails?");
+  assert.equal(h.$("transcript").children[0], row);
+});
+
+test("selected live words survive finalization and do not get reused for another interim", async () => {
+  const h = await coach(); h.manual(); h.interim("What is a queue");
+  const selected = h.$("transcript").lastChild; selectCaption(h, selected);
+  h.final("What is a queue and how does it handle retries?");
+  h.interim("And what about delivery guarantees");
+  assert.equal(selected.parentElement, h.$("transcript"));
+  assert.equal(selected.lastChild.nodeValue, "What is a queue");
+  assert.notEqual(h.run("interimNodes.interviewer.el"), selected);
+  h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.equal(h.calls[0].question, "What is a queue");
+  h.context.window.getSelection = () => null;
+  h.context.document.dispatchEvent({ type: "selectionchange" });
+  assert.equal(selected.parentElement, null);
+  assert.equal(h.run("interimNodes.interviewer.text.nodeValue"), "And what about delivery guarantees");
+});
+
+test("new captions preserve a reader's scroll position and still follow when at the bottom", async () => {
+  const h = await coach(); h.manual();
+  const view = h.$("transcript"); view.clientHeight = 400; view.scrollHeight = 2000; view.scrollTop = 100;
+  h.interim("Live words while reviewing older text"); assert.equal(view.scrollTop, 100);
+  h.final("A finalized question while reviewing older text?"); assert.equal(view.scrollTop, 100);
+  view.scrollTop = 1600;
+  h.interim("More live words at the end"); assert.equal(view.scrollTop, view.scrollHeight);
+});
+
+test("the history limit retains a selected row until the selection is released", async () => {
+  const h = await coach(); h.manual(); h.final("An older selected question?");
+  const selected = h.$("transcript").children[0]; selectCaption(h, selected);
+  for (let i = 0; i < 70; i++) h.final(`Sample caption ${i}`, i % 2 ? "interviewer" : "candidate");
+  assert.equal(selected.parentElement, h.$("transcript"));
+  h.$("btnCaptureQuestion").onclick(); await flush();
+  assert.equal(h.calls[0].question, "An older selected question?");
+  h.context.window.getSelection = () => null;
+  h.context.document.dispatchEvent({ type: "selectionchange" });
+  assert.equal(selected.parentElement, null);
+  assert.equal(h.$("transcript").children.length, 60);
+});
+
+test("pointer interaction holds the clicked row until its capture consumes the visible text", async () => {
+  const h = await coach(); h.manual(); h.final("The visible question?");
+  const row = h.$("transcript").children[0];
+  h.$("transcript").onpointerdown({ button: 0, pointerId: 7, target: { closest: () => row } });
+  h.final("A later addition to that utterance?");
+  assert.equal(row.dataset.captureText, "The visible question?");
+  h.context.document.dispatchEvent({ type: "pointerup", pointerId: 7 });
+  row.onclick(); await flush();
+  assert.equal(h.calls[0].question, "The visible question?");
+  const frame = h.run("transcriptRefreshFrame"), render = h.timers.get(frame);
+  h.timers.delete(frame); render();
+  assert.equal(row.dataset.captureText, "The visible question? A later addition to that utterance?");
+});
+
 test("selected transcript text takes precedence and Space leaves typing and controls alone", async () => {
   const h = await coach(); h.manual(); h.final("Some context and a question about retry budgets");
   h.$("transcript").contains = () => true;
