@@ -28,7 +28,7 @@ let resources = [];   // [{kind, text}] extra materials for the coach (candidate
 let profiles = null;  // the candidate / job lists; the flat fields above belong to the active pair
 let profileTasks = 0;
 let profileChanges = 0;
-const PROFILE_CONTROLS = ["candidateSel", "jobSel", "cNew", "cDup", "cDel", "jNew", "jDup", "jDel", "btnImportProfile"];
+const PROFILE_CONTROLS = ["candidateSel", "jobSel", "cNew", "cDup", "cDel", "jNew", "jDup", "jDel", "btnImportProfile", "btnReloadSettings"];
 
 function renderProfileLock() {
   const busy = profileTasks > 0 || profileChanges > 0;
@@ -80,19 +80,23 @@ function renderProfiles() {
 // Switching or managing profiles: flush pending edits into the current pair first so nothing
 // typed in the last moment is lost, apply the change to a fresh copy, store, reload.
 function withProfiles(fn) {
-  if (profileTasks) return Promise.resolve();
+  if (profileTasks) return Promise.resolve(false);
   profileChanges++;
   renderProfileLock();
   clearTimeout(autosaveTimer);
   return serial(async () => {
     await saveNow();
-    const next = fn((await loadSettings()).profiles);
+    const current = (await loadSettings()).profiles;
+    if ((current.revision || 0) !== (profiles.revision || 0)) throw new Error("Profiles changed in another window. Reload saved settings.");
+    const next = fn({ ...current, activeCandidate: profiles.activeCandidate, activeJob: profiles.activeJob });
     if (!next) return;
-    await saveSettings({ profiles: next });
+    await saveSettings({ profiles: next }, { expectedRevision: current.revision || 0 });
     giSkipped = new Set();
     $("giAnswer").value = "";
     await load();
-  }).finally(() => { profileChanges--; renderProfileLock(); });
+    return true;
+  }).catch((e) => { $("profileStatus").textContent = e.message; $("saveStatus").textContent = e.message; return false; })
+    .finally(() => { profileChanges--; renderProfileLock(); });
 }
 
 function renderStories() {
@@ -187,6 +191,9 @@ async function renderSessions() {
     const ps = s.paceSummary;
     const paceLine = ps ? ` · ${ps.answers} answers, median ${ps.medianSeconds}s${ps.long ? `, ${ps.long} over 2 min` : ""}${ps.short ? `, ${ps.short} under 20s` : ""}` : "";
     let html = `<b>${esc(when)}</b> · ${mins} min${paceLine}`;
+    const context = [s.candidateName, s.jobTitle].filter(Boolean).map(esc).join(" · ");
+    if (context) html += `<p>${context}</p>`;
+    if (s.recovered) html += "<p><small>Recovered after an interrupted call. No automatic debrief was uploaded.</small></p>";
     if (s.debrief) {
       html += `<p><b>Overall.</b> ${esc(s.debrief.overall)}</p><p><b>Practise next:</b> ${esc(s.debrief.top_fix)}</p>`;
       html += `<details><summary>Per question (${s.debrief.answers.length})</summary><ol>` + s.debrief.answers.map((a, i) => {
@@ -261,19 +268,25 @@ async function saveNow() {
   for (const f of fields) form[f] = $(f).value;
   form.devMode = $("devMode").checked;
   const { values, errors } = validateSettings(form);
-  await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely, resources: resources.filter((r) => r.text?.trim()) });
+  const target = { candidate: profiles.activeCandidate, job: profiles.activeJob };
+  const boundTarget = target.candidate && target.job ? target : undefined;
+  const saved = await saveSettings({ ...values, stories: stories.filter((s) => s.title?.trim()), likelyQuestions: likely, resources: resources.filter((r) => r.text?.trim()) },
+    { target: boundTarget, expectedRevision: profiles.revision || 0 });
+  if (saved) profiles = boundTarget ? { ...saved, activeCandidate: target.candidate, activeJob: target.job } : saved;
   return errors;
 }
 
 // The Save button: validate, store, then reload the page from storage so it shows what is really saved.
 async function saveAndRefresh() {
-  const problems = Object.values(await save());
-  await load();
-  const st = $("saveStatus");
-  st.className = problems.length ? "status error" : "status";
-  st.textContent = problems.length
-    ? `Not saved: ${problems.join("; ")}. The stored value is shown below.`
-    : "Saved. Everything shown is what is stored.";
+  try {
+    const problems = Object.values(await save());
+    await load();
+    const st = $("saveStatus");
+    st.className = problems.length ? "status error" : "status";
+    st.textContent = problems.length
+      ? `Not saved: ${problems.join("; ")}. The stored value is shown below.`
+      : "Saved. Everything shown is what is stored.";
+  } catch (e) { $("saveStatus").className = "status error"; $("saveStatus").textContent = e.message; }
 }
 
 // Every edit is saved as you go, so nothing is lost if Save is never clicked.
@@ -285,15 +298,17 @@ document.addEventListener("input", () => {
   $("saveStatus").textContent = "Saving…";
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(async () => {
-    const problems = Object.values(await save());
-    const st = $("saveStatus");
-    st.className = problems.length ? "status error" : "status";
-    st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
-    const s = await loadSettings(); // one read: key status, and a new name or title relabels the dropdowns
-    showKeyStatus(s);
-    renderContext();
-    profiles = s.profiles;
-    renderProfiles();
+    try {
+      const problems = Object.values(await save());
+      const st = $("saveStatus");
+      st.className = problems.length ? "status error" : "status";
+      st.textContent = problems.length ? `Autosave skipped: ${problems.join("; ")}` : "Autosaved";
+      const s = await loadSettings(); // one read: key status, and a new name or title relabels the dropdowns
+      showKeyStatus(s);
+      renderContext();
+      // Relabel this window's pair without adopting a selection from another window.
+      renderProfiles();
+    } catch (e) { $("saveStatus").className = "status error"; $("saveStatus").textContent = e.message; }
   }, 600);
 });
 
@@ -339,7 +354,7 @@ async function load() {
     const file = $("profileFile").files[0]; if (!file) return;
     try {
       const { kind, data } = importProfile(await file.text());
-      await withProfiles((p) => (kind === "candidate" ? addCandidate(p, data) : addJob(p, data)).profiles);
+      if (await withProfiles((p) => (kind === "candidate" ? addCandidate(p, data) : addJob(p, data)).profiles) === false) return;
       $("profileStatus").textContent = `Imported ${kind} "${kind === "candidate" ? candidateLabel(data) : jobLabel(data)}" and made it active.`;
     } catch (e) { $("profileStatus").textContent = e.message; }
     $("profileFile").value = "";
@@ -401,6 +416,13 @@ async function load() {
 
   $("btnAddStory").onclick = () => { stories.push({ title: "", situation: "", action: "", result: "", tags: "" }); renderStories(); };
   $("btnSave").onclick = saveAndRefresh;
+  $("btnReloadSettings").onclick = async () => {
+    if (profileTasks || profileChanges) return;
+    clearTimeout(autosaveTimer);
+    giSkipped = new Set(); $("giAnswer").value = "";
+    await serial(load);
+    $("saveStatus").textContent = "Saved settings reloaded.";
+  };
   $("btnTestAnthropic").onclick = async () => {
     const st = $("keyTest");
     st.className = "status"; st.textContent = "Checking with Anthropic…";

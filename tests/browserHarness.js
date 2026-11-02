@@ -26,9 +26,10 @@ export async function browserHarness(file, overrides = {}) {
   }
   const $ = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
   const globals = {
-    console, Date, performance, URL, Blob, Event, Uint8Array, TextDecoder,
+    console, Date, performance, URL, Blob, Event, Uint8Array, TextDecoder, structuredClone,
     document: {
       getElementById: $, createElement: element,
+      createTextNode: text => ({ textContent: text }),
       addEventListener(type, fn) { listeners.set(type, [...(listeners.get(type) || []), fn]); },
       dispatchEvent(ev) { for (const fn of listeners.get(ev.type) || []) fn(ev); },
     },

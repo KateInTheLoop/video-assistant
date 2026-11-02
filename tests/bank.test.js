@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportBank, importBank, mergeStories, normalizeLikely } from "../lib/bank.js";
+import { gapReport } from "../claude.js";
 
 const stories = [{ title: "Billing migration", situation: "s", action: "a", result: "r", tags: "impact", source: "cv" }];
 
@@ -13,7 +14,7 @@ test("export → import round-trips stories and likely questions", () => {
 
 test("import accepts a bare array and drops junk", () => {
   const out = importBank([{ title: "A", situation: 1, extra: "x" }, { nope: true }, null]);
-  assert.deepEqual(out.stories, [{ title: "A", situation: "1" }]);
+  assert.deepEqual(out.stories, [{ title: "A", situation: "1", action: "", result: "", tags: "" }]);
 });
 
 test("import rejects non-banks", () => {
@@ -27,4 +28,18 @@ test("merge skips duplicate titles", () => {
 
 test("normalizeLikely handles both shapes", () => {
   assert.deepEqual(normalizeLikely(["a", { q: "b", story: "S" }, { q: "" }]), [{ q: "a", story: null }, { q: "b", story: "S" }]);
+});
+
+test("a title-only imported story can be sent to the gap-report model", async () => {
+  const previous = globalThis.fetch;
+  let request;
+  globalThis.fetch = async (_url, opts) => {
+    request = JSON.parse(opts.body);
+    return new Response(JSON.stringify({ content: [{ type: "text", text: '{"questions":[]}' }] }));
+  };
+  try {
+    const stories = importBank([{ title: "Imported story" }]).stories;
+    assert.deepEqual(await gapReport({ apiKey: "example-test", stories }), []);
+    assert.match(request.messages[0].content, /Imported story/);
+  } finally { globalThis.fetch = previous; }
 });

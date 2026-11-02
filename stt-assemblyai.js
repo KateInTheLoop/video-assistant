@@ -64,6 +64,7 @@ export class AssemblyAiStream {
   }
 
   emitFinal(turnOrder, text) {
+    if (this.stopped) return;
     clearTimeout(this.finalFallbacks.get(turnOrder)); this.finalFallbacks.delete(turnOrder);
     if (turnOrder <= this.finalizedTurn) return;
     this.finalizedTurn = turnOrder;
@@ -72,7 +73,12 @@ export class AssemblyAiStream {
   }
 
   async connect() {
+    const version = this.connectionVersion = (this.connectionVersion || 0) + 1;
+    for (const timer of this.finalFallbacks.values()) clearTimeout(timer);
+    this.finalFallbacks.clear();
+    this.finalizedTurn = -1;
     const token = await this.fetchToken();
+    if (this.stopped || version !== this.connectionVersion) return;
     const params = new URLSearchParams({
       sample_rate: String(this.sampleRate || 16000),
       format_turns: "true",
@@ -87,6 +93,7 @@ export class AssemblyAiStream {
     });
 
     this.ws.onmessage = (ev) => {
+      if (this.stopped || version !== this.connectionVersion) return;
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "Turn") {
         this.retries = 0; // a stable connection: data is flowing
@@ -107,7 +114,7 @@ export class AssemblyAiStream {
         this.onError?.(new Error(msg.error || "AssemblyAI error"));
       }
     };
-    this.ws.onclose = (e) => { if (e.code !== 1000 && !this.stopped) this.reconnect(e); };
+    this.ws.onclose = (e) => { if (version === this.connectionVersion && e.code !== 1000 && !this.stopped) this.reconnect(e); };
   }
 
   // Reconnect with backoff while the media stream is live (mirrors stt.js).
@@ -140,6 +147,7 @@ export class AssemblyAiStream {
 
   stop() {
     this.stopped = true;
+    this.connectionVersion = (this.connectionVersion || 0) + 1;
     for (const t of this.finalFallbacks.values()) clearTimeout(t);
     this.finalFallbacks.clear();
     if (this.ws?.readyState === WebSocket.OPEN) {

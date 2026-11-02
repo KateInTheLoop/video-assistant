@@ -23,13 +23,13 @@ test("materials are capped with a marker", () => {
   assert.match(out, /materials truncated/);
 });
 
-test("digest lists questions with the stories used; non-questions skipped; long sessions trimmed", () => {
+test("digest labels suggestions as unconfirmed; non-questions skipped; long sessions trimmed", () => {
   assert.equal(sessionDigest([]), "");
   assert.equal(sessionDigest([q("Tell me about yourself", ["Billing migration"]), q("small talk", [], false), q("A failure?")]),
-    "1. Tell me about yourself → used: Billing migration\n2. A failure? → no story");
+    "1. Tell me about yourself [new] → suggested: Billing migration; usage unconfirmed\n2. A failure? [new] → no story suggested");
   const many = Array.from({ length: 15 }, (_, i) => q(`Q${i + 1}`));
   const d = sessionDigest(many, { max: 3 });
-  assert.equal(d, "(12 earlier questions omitted)\n13. Q13 → no story\n14. Q14 → no story\n15. Q15 → no story");
+  assert.equal(d, "(12 earlier questions omitted)\n13. Q13 [new] → no story suggested\n14. Q14 [new] → no story suggested\n15. Q15 [new] → no story suggested");
 });
 
 test("token estimate is ~chars/4", () => {
@@ -47,9 +47,17 @@ test("materials live in the cached prefix with a 1h TTL; the digest lives in the
   assert.deepEqual(a.system, b.system, "digest must not touch the prefix");
   assert.match(a.system.at(-1).text, /# Additional materials\n## Company research\nAcme is a fintech/);
   assert.deepEqual(a.system.at(-1).cache_control, { type: "ephemeral", ttl: "1h" });
-  assert.match(a.messages[0].content, /Interview so far:\n1\. Walk me through your resume → used: A/);
+  assert.match(a.messages[0].content, /Interview so far:\n1\. Walk me through your resume \[new\] → suggested: A; usage unconfirmed/);
   assert.match(b.messages[0].content, /Interview so far:\n\(first question\)/);
   assert.doesNotMatch(JSON.stringify(a.system), /Walk me through/);
+});
+
+test("only an explicit story confirmation is recorded as used", () => {
+  const suggested = { ...q("Q", ["A", "B"]), status: "dismissed" };
+  assert.doesNotMatch(sessionDigest([suggested]), /confirmed used:/);
+  const used = sessionDigest([{ ...suggested, usedStories: ["B"] }]);
+  assert.match(used, /confirmed used: B/);
+  assert.doesNotMatch(used, /confirmed used: A/);
 });
 
 test("context report breaks the prefix down and flags a prefix too small to cache", () => {

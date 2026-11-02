@@ -3,6 +3,17 @@
 // serve many applications. loadSettings() still returns the flat fields the coach has always
 // read (cvText, stories, jobDescription, resources…), taken from the active candidate and job.
 import { migrate, flatten, applyFlat, isProfiles, emptyProfiles, FLAT_KEYS } from "./lib/profiles.js";
+import { answerStats, paceSummary } from "./lib/pace.js";
+
+// Web Locks coordinate extension windows as well as the background worker. The queue is
+// for non-browser tests; Chrome uses the shared origin lock for every read/modify/write.
+let storageQueue = Promise.resolve();
+function storageTask(work) {
+  if (globalThis.navigator?.locks) return navigator.locks.request("interview-coach-storage", work);
+  const run = storageQueue.then(work, work);
+  storageQueue = run.catch(() => {});
+  return run;
+}
 
 export const DEFAULTS = {
   anthropicKey: "",
@@ -38,55 +49,91 @@ async function resolveProfiles(stored) {
   return profiles;
 }
 
-export async function loadProfiles() {
-  return resolveProfiles(await chrome.storage.local.get(["profiles", ...LEGACY_KEYS]));
+export function loadProfiles() {
+  return storageTask(async () => resolveProfiles(await chrome.storage.local.get(["profiles", ...LEGACY_KEYS])));
 }
 
-export async function loadSettings() {
-  const stored = await chrome.storage.local.get(ALL_KEYS);
-  const profiles = await resolveProfiles(stored);
-  const base = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, stored[k] ?? DEFAULTS[k]]));
-  return { ...base, profiles, ...flatten(profiles) };
+export function loadSettings() {
+  return storageTask(async () => {
+    const stored = await chrome.storage.local.get(ALL_KEYS);
+    const profiles = await resolveProfiles(stored);
+    const base = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, stored[k] ?? DEFAULTS[k]]));
+    return { ...base, profiles, ...flatten(profiles) };
+  });
 }
 
 // Accepts flat fields (written into the active candidate / job), a whole `profiles` object,
 // or plain settings keys, in any mix.
-export async function saveSettings(partial) {
-  const { profiles: incoming, ...rest } = partial;
-  const flat = {}, other = {};
-  for (const [k, v] of Object.entries(rest)) (FLAT_KEYS.includes(k) ? flat : other)[k] = v;
-  const out = { ...other };
-  if (incoming || Object.keys(flat).length) {
-    const current = incoming || await loadProfiles();
-    out.profiles = Object.keys(flat).length ? applyFlat(current, flat) : current;
-  }
-  await chrome.storage.local.set(out);
+export function saveSettings(partial, { target, expectedRevision } = {}) {
+  return storageTask(async () => {
+    const { profiles: incoming, ...rest } = partial;
+    const flat = {}, other = {};
+    for (const [k, v] of Object.entries(rest)) (FLAT_KEYS.includes(k) ? flat : other)[k] = v;
+    const out = { ...other };
+    if (incoming || Object.keys(flat).length) {
+      const stored = await resolveProfiles(await chrome.storage.local.get(["profiles", ...LEGACY_KEYS]));
+      if (expectedRevision !== undefined && expectedRevision !== (stored.revision || 0)) {
+        throw new Error("Profiles changed in another Settings window. Your edits were not saved. Reload saved settings before editing again.");
+      }
+      let current = incoming || stored;
+      if (target) {
+        if (!current.candidates[target.candidate] || !current.jobs[target.job]) throw new Error("This candidate or job was deleted. Reload saved settings.");
+        current = { ...current, activeCandidate: target.candidate, activeJob: target.job };
+      }
+      const updated = Object.keys(flat).length ? applyFlat(current, flat) : current;
+      out.profiles = { ...updated, revision: (stored.revision || 0) + 1 };
+      if (target) {
+        out.profiles.activeCandidate = stored.activeCandidate;
+        out.profiles.activeJob = stored.activeJob;
+      }
+    }
+    await chrome.storage.local.set(out);
+    return out.profiles;
+  });
 }
 
 // --- Sessions (transcript, pace, debrief per stopped call); the last 20 are kept ------------
 
-let sessionWrites = Promise.resolve();
-function writeSession(fn) {
-  const run = sessionWrites.then(fn, fn);
-  sessionWrites = run.catch(() => {});
-  return run;
-}
-
 export function appendTranscript(session) {
-  return writeSession(async () => {
-    const { sessions = [] } = await chrome.storage.local.get("sessions");
-    sessions.push(session);
-    await chrome.storage.local.set({ sessions: sessions.slice(-20) });
+  return storageTask(async () => {
+    const { sessions = [], sessionDrafts = {} } = await chrome.storage.local.get(["sessions", "sessionDrafts"]);
+    const index = sessions.findIndex((s) => s.id === session.id);
+    if (index < 0) sessions.push(session); else sessions[index] = session;
+    delete sessionDrafts[session.id];
+    await chrome.storage.local.set({ sessions: sessions.slice(-20), sessionDrafts });
   });
 }
 
 export function updateSession(session) {
-  return writeSession(async () => {
+  return storageTask(async () => {
     const { sessions = [] } = await chrome.storage.local.get("sessions");
     const index = sessions.findIndex((s) => s.id === session.id);
     // A session removed by retention must never overwrite a newer one or be resurrected.
     if (!session.id || index < 0) return;
     sessions[index] = session;
     await chrome.storage.local.set({ sessions });
+  });
+}
+
+export function saveSessionDraft(draft) {
+  // Snapshot at the event, before waiting for another window's write.
+  const snapshot = structuredClone(draft);
+  return storageTask(async () => {
+    const { sessionDrafts = {} } = await chrome.storage.local.get("sessionDrafts");
+    sessionDrafts[snapshot.id] = snapshot;
+    await chrome.storage.local.set({ sessionDrafts });
+  });
+}
+
+export function recoverSessionDrafts() {
+  return storageTask(async () => {
+    const { sessions = [], sessionDrafts = {} } = await chrome.storage.local.get(["sessions", "sessionDrafts"]);
+    const recovered = Object.values(sessionDrafts).filter((s) => s.id && s.lines?.length && !sessions.some((x) => x.id === s.id))
+      .sort((a, b) => a.start - b.start).map((s) => {
+        const pace = answerStats(s.lines, s.end);
+        return { ...s, recovered: true, pace, paceSummary: paceSummary(pace) };
+      });
+    if (Object.keys(sessionDrafts).length) await chrome.storage.local.set({ sessions: [...sessions, ...recovered].slice(-20), sessionDrafts: {} });
+    return recovered;
   });
 }
