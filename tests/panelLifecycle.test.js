@@ -230,3 +230,57 @@ test("interim captions update one live node while keeping history and pending hi
   result.resolve({ hint: { is_question: false, question_type: "none", question_summary: "", stories: [], keywords: [] }, usage: {}, ms: 1 });
   await pending;
 });
+
+test("topic experience filters the timeline, connects a story and preserves selection as semantic evidence arrives", async () => {
+  const result = deferred();
+  const cvText = "PROFESSIONAL EXPERIENCE\nRecent Analyst January 2022 - December 2022\nExample Recent\n- Used SQL for reports\nUnrelated January 2021 - December 2021\nExample Other\n- Managed office supplies\nEarlier Analyst January 2020 - December 2020\nExample Earlier\n- SQL reporting checks\nRelated Engineer January 2019 - December 2019\nExample Platform\n- Validated warehouse data pipelines\nEDUCATION\nExample College";
+  const stories = [{ title: "Reporting checks", situation: "A report needed checking", action: "Supported reporting validation", result: "Checks completed", tags: "SQL" },
+    { title: "Unrelated vendor meeting", situation: "A supplier meeting", action: "Scheduled appointments", result: "Meeting held" }];
+  const h = await panelHarness({ getHint: () => result.promise, loadSettings: async () => ({ cvText, stories, deepgramKey: "example", contextTier: "full" }) });
+  await h.$("btnMic").onclick();
+  h.connections[0].opts.onFinal({ speaker: "interviewer", text: "Tell me about your experience with SQL", speechFinal: true });
+  const response = h.run("requestHint()");
+  assert.equal(h.$("careerTitle").textContent, "Experience with SQL");
+  assert.equal(h.$("careerRoles").children.length, 2);
+  assert.equal(h.$("careerRole").children[0].textContent, "Earlier Analyst");
+  h.$("careerNext").onclick();
+  result.resolve({ hint: { is_question: true, question_type: "experience", question_summary: "SQL experience", stories: [], keywords: [],
+    experience_outline: ["Early reporting checks", "Later reporting work", "Connect validation skills to this role"],
+    experience_evidence: [{ role: 1, quote: "Validated warehouse data pipelines", story: "Reporting checks" }, { role: 2, quote: "SQL reporting checks", story: "Reporting checks" }, { role: 3, quote: "Invented SQL ownership", story: null },
+      { role: 999, quote: "Invented citation", story: "Unrelated vendor meeting" }] }, usage: {}, ms: 1 });
+  await response;
+  assert.equal(h.$("careerRoles").children.length, 3);
+  assert.equal(h.$("careerRole").children[0].textContent, "Recent Analyst", "selection follows the role, not a shifted index");
+  assert.equal(h.$("careerOverview").children.length, 3);
+  assert.equal(h.$("experienceExamples").hidden, false);
+  assert.equal(h.$("experienceStories").children.length, 1, "an invalid citation must not promote an unrelated story");
+  assert.equal(h.$("gapNotice").hidden, true);
+  h.$("careerRoles").children[1].onclick();
+  assert.ok(h.$("careerRole").children.some(node => node.children?.[0]?.textContent?.startsWith("Prepared story: Reporting checks")));
+  const confirmation = h.$("experienceStories").children[0].children.find(node => node.textContent === "Used this story");
+  assert.ok(confirmation, "topic examples retain the story-use confirmation control");
+  confirmation.onclick();
+  assert.equal(h.run('questions[0].usedStories[0]'), "Reporting checks");
+  h.$("experienceStories").children[0].children.find(node => node.textContent === "Used ✓ — undo").onclick();
+  assert.equal(h.run("questions[0].usedStories.length"), 0);
+  assert.equal(h.run("questions[0].hint.experience_topic"), "SQL");
+});
+
+test("years questions show role-window caveats and undated followups remain unknown", async () => {
+  const cvText = "PROFESSIONAL EXPERIENCE\nAnalyst January 2020 - December 2021\nExample A\n- SQL reporting\nEngineer July 2021 - June 2022\nExample B\n- Used SQL for validation\nSKILLS\nWorkday";
+  const h = await panelHarness({ loadSettings: async () => ({ cvText, stories: [], deepgramKey: "example" }),
+    getHint: async () => ({ hint: { is_question: true, question_type: "experience", question_summary: "Experience", stories: [], keywords: [] }, usage: {}, ms: 1 }),
+  });
+  await h.$("btnMic").onclick();
+  h.connections[0].opts.onFinal({ speaker: "interviewer", text: "How many years of experience do you have with SQL?", speechFinal: true });
+  await h.run("requestHint()");
+  assert.match(h.$("experienceDuration").children[0].textContent, /Up to 2 years 6 months/);
+  assert.match(h.$("experienceDuration").children[1].textContent, /do not confirm continuous use/);
+  h.run('scheduler.lastFiredAt = -Infinity; scheduler.pending = "And with Workday?"');
+  await h.run("requestHint()");
+  assert.equal(h.run("questions.length"), 2, "a new topic cannot replace the previous topic");
+  assert.equal(h.$("careerTitle").textContent, "Experience with Workday");
+  assert.match(h.$("experienceDuration").children[0].textContent, /not established/);
+  assert.match(h.$("careerRole").children[0].textContent, /CV mentions \(dates not established\):\nWorkday/);
+  assert.equal(h.run("gapQuestions().length"), 0);
+});

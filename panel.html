@@ -39,8 +39,9 @@
       </div>
       <div class="question" id="question">Waiting for a question…</div>
       <section id="careerWalkthrough" class="careerWalkthrough" hidden>
-        <b>Career walkthrough</b>
+        <b id="careerTitle">Career walkthrough</b>
         <p id="careerSummary"></p>
+        <div id="experienceDuration" class="experienceDuration" hidden></div>
         <ul id="careerOverview"></ul>
         <div class="careerControls">
           <label for="careerOrder">Order</label>
@@ -53,6 +54,10 @@
         </div>
         <p id="careerProgress" aria-live="polite"></p>
         <article id="careerRole"></article>
+        <details id="experienceExamples" hidden>
+          <summary>Related prepared examples</summary>
+          <div id="experienceStories"></div>
+        </details>
         <details>
           <summary id="careerAllRoles">All roles</summary>
           <nav id="careerRoles" class="careerRoles" aria-label="Career roles"></nav>
