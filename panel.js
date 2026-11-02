@@ -1,4 +1,4 @@
-import { loadSettings, appendTranscript, updateLastSession } from "./storage.js";
+import { loadSettings, appendTranscript, updateSession } from "./storage.js";
 import { SttStream } from "./stt.js";
 import { AssemblyAiStream } from "./stt-assemblyai.js";
 import { WebSpeechStream } from "./webspeech.js";
@@ -35,7 +35,7 @@ let streams = { interviewer: null, candidate: null };
 let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
-const scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
+let scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
 let lastHint = null;                 // last validated hint, so follow-ups keep the same story
 let talkStart = null, talkTimer = null;
@@ -44,6 +44,8 @@ let lastCandidateAt = 0;             // last time the candidate's mic produced s
 // next to the transcript only in developer mode (Settings → Diagnostics).
 const trace = createTrace({ onMark: (e) => { if (settings?.devMode) console.debug(`+${e.t}ms ${e.event}`, e); } });
 let sessionStart = null;
+let sessionVersion = 0;
+const capturePending = { interviewer: null, candidate: null };
 
 function setStatus(msg, isError = false) {
   if (isError) trace.mark("status.error", { msg });
@@ -117,10 +119,13 @@ const CACHE_REFRESH_MS = 50 * 60 * 1000; // the 1h TTL is refreshed by every hin
 function prewarm(reason) {
   if (!settings.anthropicKey) return;
   clearTimeout(prewarmTimer);
+  const version = sessionVersion;
   prewarmTimer = setTimeout(async () => {
+    if (version !== sessionVersion || sessionStart === null) return;
     const t = trace.mark("cache.prewarm.start", { reason });
     try {
       const r = await prewarmHint({ apiKey: settings.anthropicKey, model: settings.model, stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText, resources: settings.resources, tier: settings.contextTier });
+      if (version !== sessionVersion) return;
       lastCacheTouch = Date.now();
       trace.mark("cache.prewarm.done", { ms: Math.round(r.ms), write: r.usage.cache_creation_input_tokens || 0, read: r.usage.cache_read_input_tokens || 0 });
     } catch (e) {
@@ -140,6 +145,9 @@ function renderPartial(h) {
 
 async function requestHint() {
   clearTimeout(hintTimer);
+  if (sessionStart === null) return;
+  const version = sessionVersion;
+  const hintScheduler = scheduler;
   const q = scheduler.take(Date.now());
   if (q === null) {
     // Gate or in-flight blocked us; the done() path or the next speech event reschedules.
@@ -158,16 +166,18 @@ async function requestHint() {
       apiKey: settings.anthropicKey, model: settings.model, transcript,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
       resources: settings.resources, questions, lastHint, tier: settings.contextTier,
-      onFirstToken: (ms) => trace.mark("hint.ttft", { ms: Math.round(ms) }),
+      onFirstToken: (ms) => { if (version === sessionVersion) trace.mark("hint.ttft", { ms: Math.round(ms) }); },
       // Show what has streamed so far: the question, stories and keywords arrive about a
       // second before the answer shape does. Provisional until the final validated hint.
       onPartial: (p) => {
+        if (version !== sessionVersion) return;
         const h = provisionalHint(p, titles);
         if (!h) return;
         if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
         renderPartial(h);
       },
     });
+    if (version !== sessionVersion) return;
     if (partialFrame) { cancelAnimationFrame(partialFrame); partialFrame = 0; } pendingPartial = null;
     const { ok, errors, hint } = validateHint(res.hint, titles);
     if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
@@ -182,12 +192,14 @@ async function requestHint() {
       : `Hint in ${Math.round(res.ms)} ms${cached ? ", cached" : ""}`);
     recordDiag({ ms: res.ms, usage: res.usage, model: res.model, ok: true });
   } catch (e) {
+    if (version !== sessionVersion) return;
     trace.mark("hint.error", { ms: Math.round(performance.now() - t0), error: e.message });
     setHintState(e.message, true);
     setStatus(e.message, true);
     recordDiag({ ms: performance.now() - t0, usage: res?.usage, model: res?.model || settings.model, ok: false, error: e.message });
   } finally {
-    schedule(scheduler.done(Date.now()));
+    const plan = hintScheduler.done(Date.now());
+    if (version === sessionVersion) schedule(plan);
   }
 }
 
@@ -470,13 +482,15 @@ function stopTalkClock() {
 // First capture of a new session: forget the previous interview so it is not appended to.
 function beginSessionIfNeeded() {
   if (sessionStart !== null) return;
+  sessionVersion++;
   sessionStart = Date.now();
   trace.reset();
   trace.mark("session.start", { provider: settings.sttProvider, model: settings.model, tier: settings.contextTier, stories: settings.stories?.length || 0 });
   transcript = [];
   interim = { interviewer: null, candidate: null };
   lastHint = null;
-  scheduler.onCandidateSpeaks(); // clears any pending interviewer text
+  scheduler = new HintScheduler();
+  lastCandidateAt = 0;
   prewarm("session start");
   clearTimeout(hintTimer);
   questions = []; selectedId = null;
@@ -494,9 +508,11 @@ function sttProviderName() {
 }
 
 function sttFor(speaker) {
-  const opts = { apiKey: sttKey(), speaker, onInterim, onFinal, onUtteranceEnd, onError: (e) => { trace.mark("stt.error", { speaker, msg: e.message }); setStatus(e.message, true); } };
+  const version = sessionVersion;
+  const current = (fn) => (...args) => { if (version === sessionVersion) fn(...args); };
+  const opts = { apiKey: sttKey(), speaker, onInterim: current(onInterim), onFinal: current(onFinal), onUtteranceEnd: current(onUtteranceEnd), onError: current((e) => { trace.mark("stt.error", { speaker, msg: e.message }); setStatus(e.message, true); }) };
   const stream = settings.sttProvider === "assemblyai" ? new AssemblyAiStream(opts) : new SttStream(opts);
-  stream.onStatus = (msg) => setStatus(msg);
+  stream.onStatus = current((msg) => setStatus(msg));
   return stream;
 }
 
@@ -541,19 +557,10 @@ async function captureTab() {
   try {
     // Chrome only offers the "Share tab audio" checkbox when video is requested too. The video
     // track is the picture of the call shown beside the coach (see attachCall).
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, selfBrowserSurface: "exclude" });
-    const { audio, video } = callTracks(stream);
-    if (!audio) {
-      stream.getTracks().forEach((t) => t.stop());
-      return setStatus("No audio in that share. Pick the meeting *tab* and tick 'Share tab audio'.", true);
-    }
-    beginSessionIfNeeded();
-    media.interviewer = stream;
-    streams.interviewer = sttFor("interviewer");
-    await streams.interviewer.start(stream);
-    audio.onended = stopAll;
+    const stream = await captureSource("interviewer", () => navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, selfBrowserSurface: "exclude" }), () => sttFor("interviewer"));
+    if (!stream) return;
+    const { video } = callTracks(stream);
     attachCall(video);
-    ui.tab.classList.add("active"); ui.stop.disabled = false;
     setStatus(video ? "Call live, picture on the left. Now capture your mic." : "Call audio live. Now capture your mic.");
   } catch (e) { setStatus(e.message, true); }
 }
@@ -563,16 +570,13 @@ async function captureMic() {
   if (!sttKey() && settings.sttProvider === "assemblyai") return setStatus("Add an AssemblyAI key in Settings first.", true);
   if (useBuiltin && !WebSpeechStream.supported()) return setStatus("Add a Deepgram key in Settings first.", true);
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-    beginSessionIfNeeded();
-    media.candidate = stream;
-    if (useBuiltin) {
-      streams.candidate = new WebSpeechStream({ speaker: "candidate", onInterim, onFinal, onUtteranceEnd, onError: (e) => setStatus(e.message, true) });
-    } else {
-      streams.candidate = sttFor("candidate");
-    }
-    await streams.candidate.start(stream);
-    ui.mic.classList.add("active"); ui.stop.disabled = false;
+    const stream = await captureSource("candidate", () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }), () => {
+      if (!useBuiltin) return sttFor("candidate");
+      const version = sessionVersion;
+      const current = (fn) => (...args) => { if (version === sessionVersion) fn(...args); };
+      return new WebSpeechStream({ speaker: "candidate", onInterim: current(onInterim), onFinal: current(onFinal), onUtteranceEnd: current(onUtteranceEnd), onError: current((e) => setStatus(e.message, true)) });
+    });
+    if (!stream) return;
     setStatus(useBuiltin ? "Mic live via Chrome's built-in recognition (no Deepgram key). Call audio still needs a Deepgram key." : "Mic live. Good luck.");
   } catch (e) {
     if (e.name === "NotAllowedError" || e.name === "NotFoundError") {
@@ -586,29 +590,78 @@ async function captureMic() {
   }
 }
 
+// A source owns one capture and one STT connection, including while permission or the
+// connection handshake is pending. Stop invalidates that ownership before any await.
+async function captureSource(speaker, acquire, createStt) {
+  if (capturePending[speaker] || media[speaker]) return null;
+  const token = capturePending[speaker] = {};
+  const button = speaker === "interviewer" ? ui.tab : ui.mic;
+  button.disabled = true;
+  ui.stop.disabled = false;
+  let stream, stt, started = false;
+  try {
+    stream = await acquire();
+    if (capturePending[speaker] !== token) return null;
+    const audio = stream.getAudioTracks()[0];
+    if (!audio) throw new Error("No audio in that share. Pick the meeting *tab* and tick 'Share tab audio'.");
+    beginSessionIfNeeded();
+    media[speaker] = stream;
+    stt = streams[speaker] = createStt();
+    audio.onended = () => { if (media[speaker] === stream) stopAll(); };
+    await stt.start(stream);
+    if (capturePending[speaker] !== token) return null;
+    started = true;
+    button.classList.add("active");
+    return stream;
+  } catch (e) {
+    if (capturePending[speaker] === token) throw e;
+    return null; // a handshake cancelled by Stop must not overwrite the next session's status
+  } finally {
+    if (!started) {
+      stt?.stop();
+      stream?.getTracks().forEach((t) => t.stop());
+      if (media[speaker] === stream) media[speaker] = null;
+      if (streams[speaker] === stt) streams[speaker] = null;
+    }
+    if (capturePending[speaker] === token) capturePending[speaker] = null;
+    button.disabled = !!media[speaker] || !!capturePending[speaker];
+    ui.stop.disabled = !Object.values(media).some(Boolean) && !Object.values(capturePending).some(Boolean);
+    if (ui.stop.disabled && !transcript.length) sessionStart = null;
+  }
+}
+
 async function stopAll() {
+  const start = sessionStart;
+  const lines = transcript.map((line) => ({ ...line }));
+  const stoppedSettings = settings;
+  const gaps = gapQuestions();
+  const version = ++sessionVersion;
+  sessionStart = null;
+  clearTimeout(hintTimer); clearTimeout(prewarmTimer);
+  if (partialFrame) cancelAnimationFrame(partialFrame);
+  partialFrame = 0; pendingPartial = null;
+  scheduler = new HintScheduler();
   for (const sp of ["interviewer", "candidate"]) {
+    capturePending[sp] = null;
     streams[sp]?.stop(); streams[sp] = null;
     media[sp]?.getTracks().forEach((t) => t.stop()); media[sp] = null;
   }
   detachCall();
   stopTalkClock();
   ui.tab.classList.remove("active"); ui.mic.classList.remove("active"); ui.stop.disabled = true;
-  if (transcript.length) {
+  ui.tab.disabled = false; ui.mic.disabled = false;
+  if (lines.length && start !== null) {
     const end = Date.now();
-    const lines = transcript;
-    const session = { start: sessionStart, end, lines, pace: answerStats(lines, end), paceSummary: paceSummary(answerStats(lines, end)) };
-    sessionStart = null;
+    const session = { id: crypto.randomUUID(), start, end, lines, pace: answerStats(lines, end), paceSummary: paceSummary(answerStats(lines, end)) };
     await appendTranscript(session);
-    setStatus("Stopped. Transcript saved. Writing debrief…");
+    if (version === sessionVersion) setStatus("Stopped. Transcript saved. Writing debrief…");
     try {
-      session.debrief = await debrief({ apiKey: settings.anthropicKey, model: settings.model, lines, stories: settings.stories });
-      await updateLastSession(session);
-      setStatus("Debrief ready in Settings → Past sessions.");
-    } catch (e) { setStatus(`Transcript saved; debrief failed: ${e.message}`, true); }
+      session.debrief = await debrief({ apiKey: stoppedSettings.anthropicKey, model: stoppedSettings.model, lines, stories: stoppedSettings.stories });
+      await updateSession(session);
+      if (version === sessionVersion) setStatus("Debrief ready in Settings → Past sessions.");
+    } catch (e) { if (version === sessionVersion) setStatus(`Transcript saved; debrief failed: ${e.message}`, true); }
   } else setStatus("Stopped.");
-  reportGaps();
-  sessionStart = null;
+  if (version === sessionVersion && gaps.length) setStatus(`${gaps.length} question(s) had no matching story. Saved with the transcript — add stories for them in Settings.`, true);
 }
 
 // --- Boot ------------------------------------------------------------------

@@ -46,16 +46,16 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
 
 ## 5. After the call
 1. Click **Stop**. The transcript is saved locally and a debrief is written.
-2. Open **Settings → Past sessions**: overall note, the one thing to practise, and per question which STAR parts you hit and how long you talked.
+2. Open **Settings → Content tab → Past sessions** (collapsed at the bottom): overall note, the one thing to practise, and per question which STAR parts you hit and how long you talked.
 3. Check **Diagnostics**: median hint latency and cache hit rate. Cache hits should be near 100 % after the first hint of a session.
 
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
-| "Chrome blocked the microphone" | Settings → Test microphone, allow, then retry |
+| "Chrome blocked the microphone" | Settings → Content tab → Microphone test, allow, then retry |
 | "No audio in that share" | Pick **Chrome Tab**, not screen or window, and tick Share tab audio |
 | "Deepgram connection failed" | Check the key; the extension retries 3 times on drops |
-| Hints slow (> 3 s) | Settings → model → Haiku 5.5 |
+| Hints slow (> 3 s) | Settings → Start tab → Live hint model → Haiku 5.5 |
 | Hint card never updates | Open the coach window's DevTools (right click → Inspect) and look for "hint validator" warnings |
 | Nothing works, no error | Reload the extension on `chrome://extensions` and reopen the coach window |
 
