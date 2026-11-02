@@ -51,6 +51,23 @@ The application supplies the response schema and enforces evidence checks separa
 3. Click **Capture my mic**.
 4. Hints appear when the interviewer stops talking. The transcript is saved locally when you Stop.
 
+Choose a layout in the coach header:
+
+- **Text-heavy** (default): a small call preview above the transcript on the left, with half
+  the window for answers and notes on the right.
+- **Whiteboard**: a large shared picture with captions underneath and coaching alongside.
+- **Current**: the full-height call beside a column containing hints, questions and captions.
+
+In wide windows, drag the column divider or the call/transcript divider to adjust the split.
+You can also focus a divider and use arrow keys (Shift for a larger step, Home/End for the
+limits), or double-click it to reset. **Text** changes answer and caption size from 14–20 px.
+**Hide call**, **Hide transcript**, and **Reset layout** control the current preset. Splits and
+visibility are remembered separately for each preset; text size and your last preset are
+remembered across coach windows. Narrow windows reflow automatically. Display preferences
+stay in local browser storage, separate from candidate/job context. Layout changes keep
+capture and live captions running. The shared picture is a mirror; meeting and whiteboard
+interaction stays in the original tab.
+
 ## What the coach knows
 Each live hint receives your enabled coach notes and selected resume summary plus the context chosen in Settings: Lean adds stories and the job description, Standard adds the CV, and Everything adds other enabled materials. Settings → "What the coach sees" estimates each part, including the dated role index and response format. **Count with API** counts a sample hint with an empty transcript; live transcript and interview history add input tokens. Diagnostics show actual cache reads. The coach is also told what has been asked and which stories you confirmed using. Live hints default to Claude Haiku 5.5; drafting stories, the gap report and the debrief use Claude Opus 5.5. Explicit resume requests with a prepared answer are retrieved locally.
 

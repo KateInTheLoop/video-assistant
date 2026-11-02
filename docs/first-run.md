@@ -50,6 +50,12 @@ _Screenshot placeholder: Chrome share picker with Chrome Tab selected and the au
 Wear headphones. Without them the mic hears the interviewer through your speakers and their words show up as yours.
 
 ## 4. During the call
+- Choose **Text-heavy**, **Whiteboard**, or **Current** in the coach header. Text-heavy starts
+  with a small call above the transcript and a wide answer column. Whiteboard enlarges the
+  shared picture; Current keeps the previous arrangement. Drag dividers in wide windows,
+  adjust **Text** size, or hide a pane. Focus a divider and use arrow keys for keyboard resizing;
+  double-click to reset it, or use **Reset layout** for the whole preset. Your adjustments and
+  last layout are remembered. Switching views keeps audio capture and captions running.
 - The big line is the question, restated. Technical questions show factual **Technical notes**, including explanations and small examples. Experience questions show up to three of your stories with cues and up to six keywords.
 - **Used this story** confirms that you actually drew on a suggested story. Unconfirmed suggestions do not count as used.
 - To prepare that opening, use **Content → Interview guidance and materials → Add resume summary**.

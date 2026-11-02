@@ -30,6 +30,69 @@ async function panelHarness(overrides = {}) {
   return { ...h, connections, captures, sessions, updates };
 }
 
+test("layout changes preserve shared video, audio ownership and captions during a pending hint", async () => {
+  const audio = { stopped: false, stop() { this.stopped = true; } };
+  const video = { stopped: false, stop() { this.stopped = true; }, getSettings: () => ({ width: 1280, height: 720 }) };
+  const shared = { getAudioTracks: () => [audio], getVideoTracks: () => [video], getTracks: () => [audio, video] };
+  const response = deferred();
+  class Mirror { constructor(tracks) { this.tracks = tracks; } }
+  const h = await panelHarness({
+    navigator: { mediaDevices: { getDisplayMedia: async () => shared } }, MediaStream: Mirror,
+    getHint: () => response.promise,
+  });
+  await h.$("btnTab").onclick();
+  const mirror = h.$("callVideo").srcObject, captionNode = h.$("transcript");
+  h.connections[0].opts.onInterim({ speaker: "interviewer", text: "Caption before layout change" });
+  const liveNode = captionNode.lastChild;
+  h.run('scheduler.pending = "What is a queue?"');
+  const pendingHint = h.run("requestHint()");
+  for (const preset of ["layoutWhiteboard", "layoutCurrent", "layoutText"]) h.$(preset).onclick();
+  h.$("btnCall").onclick(); h.$("btnTranscript").onclick();
+  h.$("readingSize").value = "20"; h.$("readingSize").onchange();
+  h.$("btnLayoutReset").onclick();
+  assert.equal(h.$("callVideo").srcObject, mirror);
+  assert.equal(h.connections.length, 1);
+  assert.equal(h.connections[0].stopped, undefined);
+  assert.equal(audio.stopped, false); assert.equal(video.stopped, false);
+  assert.equal(h.$("transcript"), captionNode);
+  assert.equal(captionNode.lastChild, liveNode);
+  h.connections[0].opts.onInterim({ speaker: "interviewer", text: "Caption after layout change" });
+  assert.equal(liveNode.lastChild.nodeValue, "Caption after layout change");
+  response.resolve({ hint: { is_question: true, question_type: "technical", question_summary: "What is a queue?", technical_points: ["A queue buffers work."], stories: [], keywords: [] }, usage: {}, ms: 1 });
+  await pendingHint;
+  assert.equal(h.$("question").textContent, "What is a queue?");
+  video.onended();
+  assert.equal(h.$("callPane").hidden, true);
+  assert.equal(h.$("captions").hidden, false);
+  assert.equal(h.connections[0].stopped, undefined);
+  await h.$("btnStop").onclick();
+  assert.equal(audio.stopped, true); assert.equal(video.stopped, true);
+  assert.equal(h.$("callVideo").srcObject, null);
+});
+
+test("layout preferences restore separately from interview settings and survive blocked storage", async () => {
+  const data = new Map();
+  const localStorage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) };
+  const h = await panelHarness({ localStorage });
+  h.$("btnTranscript").onclick();
+  h.$("layoutWhiteboard").onclick();
+  h.$("readingSize").value = "18"; h.$("readingSize").onchange();
+  const next = await panelHarness({ localStorage });
+  assert.equal(next.$("stage").dataset.layout, "whiteboard");
+  assert.equal(next.$("readingSize").value, "18");
+  assert.equal(next.$("captions").hidden, false);
+  next.$("layoutText").onclick();
+  assert.equal(next.$("captions").hidden, true);
+  next.$("btnLayoutReset").onclick();
+  assert.equal(next.$("captions").hidden, false);
+  assert.equal(next.$("readingSize").value, "18");
+  assert.equal(next.connections.length, 0);
+  const blocked = await panelHarness({ localStorage: { getItem() { throw new Error("Blocked"); }, setItem() { throw new Error("Blocked"); } } });
+  blocked.$("layoutWhiteboard").onclick();
+  assert.equal(blocked.$("stage").dataset.layout, "whiteboard");
+  assert.match(blocked.$("layoutStatus").textContent, /saving is unavailable/);
+});
+
 test("repeated mic capture creates one connection and Stop closes all owned audio", async () => {
   const h = await panelHarness();
   await Promise.all([h.$("btnMic").onclick(), h.$("btnMic").onclick()]);

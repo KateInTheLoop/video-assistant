@@ -10,7 +10,8 @@ import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
 import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
 import { createTrace, formatTrace } from "./lib/trace.js";
-import { callTracks, showCallPane, stageLayout } from "./lib/callView.js";
+import { callTracks } from "./lib/callView.js";
+import { createPanelLayout } from "./lib/panelLayout.js";
 import { provisionalHint, hasStoryGap } from "./lib/hintSchema.js";
 import { careerTimeline, isCareerWalkthrough } from "./lib/careerTimeline.js";
 import { experienceIntent, routeQuestionHint } from "./lib/experienceContext.js";
@@ -766,7 +767,7 @@ function sttFor(speaker) {
 
 // --- The stage: the call's picture beside the coach ---------------------------------
 
-let callHidden = false; // the user's in-session choice; the picture stays live underneath
+let panelLayout;
 
 // Muted on purpose: the call's audio goes to the captions and never back out of this window.
 // selfBrowserSurface:"exclude" keeps this window out of the share picker, so the mirror can
@@ -788,11 +789,7 @@ function detachCall() {
 }
 
 function layoutStage() {
-  const withCall = showCallPane({ hasVideo: !!ui.callVideo.srcObject, hidden: callHidden });
-  ui.callPane.hidden = !withCall;
-  ui.stage.classList.toggle("withCall", withCall);
-  ui.stage.classList.toggle("stacked", stageLayout({ width: window.innerWidth, withCall }) === "stacked");
-  ui.call.textContent = callHidden ? "Show call" : "Hide call";
+  panelLayout?.update({ hasVideo: !!ui.callVideo.srcObject });
 }
 
 function toggleFullscreen() {
@@ -809,7 +806,7 @@ async function captureTab() {
     if (!stream) return;
     const { video } = callTracks(stream);
     attachCall(video);
-    setStatus(video ? "Call live, picture on the left. Now capture your mic." : "Call audio live. Now capture your mic.");
+    setStatus(video ? "Call live. Choose a layout above; now capture your mic." : "Call audio live. Now capture your mic.");
   } catch (e) { setStatus(e.message, true); }
 }
 
@@ -941,7 +938,7 @@ async function stopAll() {
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;
   ui.save.onclick = saveTranscript;
-  ui.call.onclick = () => { callHidden = !callHidden; trace.mark(callHidden ? "call.pane.hidden" : "call.pane.shown"); layoutStage(); };
+  panelLayout = createPanelLayout({ document, window, storage: () => localStorage, onChange: (preset) => trace.mark("layout.change", { preset }) });
   ui.full.onclick = toggleFullscreen;
   ui.careerPrev.onclick = () => { careerView.index--; renderCareerRole(); };
   ui.careerNext.onclick = () => { careerView.index++; renderCareerRole(); };
