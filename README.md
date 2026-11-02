@@ -141,6 +141,32 @@ The status line shows first-token and total time per hint and how long after the
 speech it arrived, and Save transcript also downloads an `interview-….trace.log`. It changes
 nothing about what is sent to Claude.
 
+### Replay a recording locally
+
+From a source checkout with Node.js 20 or later, run `npm run replay`, then open
+**http://127.0.0.1:8765** in Chrome. Use **Open recording** to choose a local video or audio
+file; keep it paused while connecting. If the port is busy, use `npm run replay -- --port 8766`.
+
+In Interview Coach, choose **Capture call audio → Chrome Tab → Interview replay — Coach**,
+tick **Share tab audio**, then Share. Leave **Capture my mic** off for a recording containing
+both speakers. Press Play in the replay tab and leave its player unmuted. Captions, automatic
+questions and manual capture use the existing live pipeline. API keys and normal provider
+charges still apply. A mixed recording is a single interviewer stream; original candidate
+speech is not separated into a candidate track.
+
+Use native playback controls to pause, seek or adjust volume, plus the speed selector,
+10-second jumps and **Restart**. For a section loop, enter From/To timestamps (seconds,
+`m:ss` or `h:mm:ss`, with optional decimals), or seek and **Set here**, then enable
+**Loop section**. Loop points are approximate. **Use full recording** clears the loop.
+Use 1× to compare normal timing. Seeking and looping keep the coach's existing context;
+for an independent test, Stop the coach, pause/rewind the file, then capture the tab again.
+
+The server listens only on `127.0.0.1` and serves only the player assets. The chosen recording
+stays in the browser; it is not uploaded to this server or copied into the repository.
+Sharing through the coach sends audio to the selected speech provider and transcript/context
+to Anthropic as usual. Chrome must support the recording's codec; timing controls require
+a known file duration. Ctrl+C stops the server. This source-only tool is not in the extension ZIP.
+
 ## Profiles: one candidate, many jobs
 
 Settings has two tabs. **Start** is one screen: keys, speech-to-text provider, live-hint model,

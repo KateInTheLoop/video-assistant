@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interview replay — Coach</title>
+  <link rel="stylesheet" href="/replay.css">
+  <script type="module" src="/replay.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Interview Coach · Development</p>
+      <h1>Interview replay</h1>
+      <p class="intro">Play a recording in this tab to test captions, questions and layouts.</p>
+    </div>
+    <button id="open" class="primary" type="button">Open recording</button>
+    <input id="file" type="file" accept="video/*,audio/*,.mp4,.webm,.mov,.mp3,.wav,.m4a,.ogg" hidden>
+  </header>
+  <main>
+    <section class="player" aria-label="Recording player">
+      <div class="fileHeading">
+        <span id="filename">No recording selected</span>
+        <span class="badge">Local file</span>
+      </div>
+      <div class="stage">
+        <video id="recording" controls playsinline preload="metadata" aria-label="Recorded interview"></video>
+        <div id="placeholder" class="placeholder">
+          <strong>Choose an interview recording</strong>
+          <span>Video or audio supported by Chrome, such as MP4, WebM, MP3 or WAV.</span>
+        </div>
+        <div id="audioLabel" class="placeholder audioLabel" hidden><strong>Audio recording</strong><span>Use the playback controls below.</span></div>
+      </div>
+      <fieldset id="transport" class="transport" disabled>
+        <legend class="srOnly">Playback controls</legend>
+        <button id="back" type="button" aria-label="Back 10 seconds">−10 s</button>
+        <button id="forward" type="button" aria-label="Forward 10 seconds">+10 s</button>
+        <button id="restart" type="button" title="Return to the beginning, or the loop start when enabled">Restart</button>
+        <label class="speed" for="speed">Speed
+          <select id="speed">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="1.75">1.75×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+      </fieldset>
+      <fieldset id="loopControls" class="loopControls" disabled>
+        <legend>Repeat a section</legend>
+        <div class="loopFields">
+          <div class="mark">
+            <label for="from">From <span class="muted">m:ss</span></label>
+            <div class="inputGroup"><input id="from" type="text" value="0:00" spellcheck="false" aria-describedby="rangeHelp error"><button id="markFrom" type="button" aria-label="Set loop start to current position">Set here</button></div>
+          </div>
+          <div class="mark">
+            <label for="to">To <span class="muted">m:ss</span></label>
+            <div class="inputGroup"><input id="to" type="text" value="0:00" spellcheck="false" aria-describedby="rangeHelp error"><button id="markTo" type="button" aria-label="Set loop end to current position">Set here</button></div>
+          </div>
+        </div>
+        <div class="loopActions">
+          <label class="check"><input id="loop" type="checkbox">Loop section</label>
+          <button id="clearLoop" type="button">Use full recording</button>
+        </div>
+        <p id="rangeHelp" class="muted">Enter times or seek and use Set here. Loop points are approximate.</p>
+      </fieldset>
+      <p id="status" role="status">Open a recording, then share this tab with the coach before pressing Play.</p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+    <aside>
+      <h2>Connect to the coach</h2>
+      <ol>
+        <li>Open a recording and leave it paused.</li>
+        <li>Open Interview Coach and click <strong>Capture call audio</strong>.</li>
+        <li>Choose <strong>Chrome Tab → Interview replay — Coach</strong>, enable <strong>Share tab audio</strong>, then Share.</li>
+        <li>Keep <strong>Capture my mic off</strong> for a recording containing both speakers.</li>
+        <li>Press <strong>Play</strong> here, leaving the player unmuted. Try Automatic or Manual questions in the coach.</li>
+      </ol>
+      <div class="note">
+        <h3>Compare the same section</h3>
+        <p>Use 1× for normal timing. Pause or loop to inspect the UI. For a clean comparison after seeking or looping, Stop the coach, pause and rewind the recording, then capture this tab again.</p>
+      </div>
+      <p class="detail">A mixed recording is one interviewer audio stream. This tool does not separate the original speakers or provide a separate candidate track.</p>
+      <p class="detail">The player opens your file locally without uploading it. Sharing this tab through the coach sends its audio and transcript to your configured providers, just like a live call. Normal API charges apply.</p>
+    </aside>
+  </main>
+</body>
+</html>
