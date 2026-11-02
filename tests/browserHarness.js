@@ -14,8 +14,11 @@ export async function browserHarness(file, overrides = {}) {
   function element() {
     const children = [], selectors = new Map();
     return {
-      value: "", textContent: "", innerHTML: "", checked: false, disabled: false,
+      value: "", textContent: "", checked: false, disabled: false,
+      get innerHTML() { return ""; }, set innerHTML(value) { if (value === "") children.length = 0; },
+      setAttribute(name, value) { this[name] = value; }, getAttribute(name) { return this[name] ?? null; },
       hidden: false, style: {}, dataset: {}, files: [], children,
+      get lastChild() { return children.at(-1); },
       options: [{ value: "claude-haiku-5-5" }, { value: "full" }],
       classList: { add() {}, remove() {}, toggle() {} },
       append(...els) { children.push(...els); }, appendChild(el) { children.push(el); },

@@ -12,6 +12,8 @@ import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questi
 import { createTrace, formatTrace } from "./lib/trace.js";
 import { callTracks, showCallPane, stageLayout } from "./lib/callView.js";
 import { provisionalHint, hasStoryGap } from "./lib/hintSchema.js";
+import { careerTimeline, isCareerWalkthrough, routeCareerHint } from "./lib/careerTimeline.js";
+import { captionSummary } from "./lib/sttLatency.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -24,6 +26,10 @@ const ui = {
   bankWarn: $("bankWarn"), gapNotice: $("gapNotice"),
   shapeBox: $("shapeBox"), answerShape: $("answerShape"), followUps: $("followUps"),
   technicalNotes: $("technicalNotes"), technicalPoints: $("technicalPoints"),
+  career: $("careerWalkthrough"), careerSummary: $("careerSummary"), careerOverview: $("careerOverview"), careerRoles: $("careerRoles"),
+  careerRole: $("careerRole"), careerProgress: $("careerProgress"), careerPrev: $("careerPrev"), careerNext: $("careerNext"),
+  careerSlider: $("careerSlider"), careerOrder: $("careerOrder"), careerClose: $("careerClose"),
+  careerAllRoles: $("careerAllRoles"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -39,6 +45,8 @@ let streams = { interviewer: null, candidate: null };
 let media = { interviewer: null, candidate: null };
 let transcript = [];                 // final lines: {speaker, text, t}
 let interim = { interviewer: null, candidate: null };
+let interimNodes = {};
+let captionSamples = [];
 let scheduler = new HintScheduler();  // coalesces interviewer speech, gates hint calls
 let hintTimer = null;
 let lastHint = null;                 // last validated hint, so follow-ups keep the same story
@@ -61,13 +69,27 @@ function setStatus(msg, isError = false) {
 
 function renderTranscript() {
   ui.transcript.innerHTML = "";
+  interimNodes = {};
   const lines = transcript.slice(-60);
   for (const l of lines) ui.transcript.appendChild(lineEl(l.speaker, l.text, false));
   for (const sp of ["interviewer", "candidate"]) {
-    if (interim[sp]) ui.transcript.appendChild(lineEl(sp, interim[sp], true));
+    renderInterim(sp);
   }
   ui.transcript.scrollTop = ui.transcript.scrollHeight;
   ui.save.disabled = transcript.length === 0;
+}
+
+// Interim words update one node immediately. Rebuilding all 60 history rows on every
+// partial result made fast captions unnecessarily expensive while hints were streaming.
+function renderInterim(speaker) {
+  if (!interim[speaker]) return;
+  let node = interimNodes[speaker];
+  if (!node) {
+    const el = lineEl(speaker, interim[speaker], true);
+    node = interimNodes[speaker] = { el, text: el.lastChild };
+    ui.transcript.appendChild(el);
+  } else node.text.nodeValue = interim[speaker];
+  ui.transcript.scrollTop = ui.transcript.scrollHeight;
 }
 
 function lineEl(speaker, text, isInterim) {
@@ -76,6 +98,7 @@ function lineEl(speaker, text, isInterim) {
   const who = document.createElement("span");
   who.className = "who";
   who.textContent = speaker === "interviewer" ? "Interviewer" : (transcriptName || settings.candidateName || "You");
+  if (isInterim) who.textContent += " · live";
   el.appendChild(who);
   el.appendChild(document.createTextNode(text));
   return el;
@@ -83,11 +106,16 @@ function lineEl(speaker, text, isInterim) {
 
 // --- Speech events -----------------------------------------------------------
 
-function onInterim({ speaker, text }) {
+function onInterim({ speaker, text, backlogMs = null }) {
+  const t0 = performance.now();
   if (interim[speaker] === null) trace.mark("stt.interim.start", { speaker });
   interim[speaker] = text;
   if (speaker === "candidate") { lastCandidateAt = Date.now(); scheduler.onCandidateSpeaks(); if (!talkStart) startTalkClock(); }
-  renderTranscript();
+  renderInterim(speaker);
+  const renderMs = Math.round((performance.now() - t0) * 100) / 100;
+  captionSamples.push({ backlogMs, renderMs });
+  if (captionSamples.length > 200) captionSamples.shift();
+  if (settings.devMode) trace.mark("caption.update", { speaker, backlogMs, renderMs });
 }
 
 function onFinal({ speaker, text, speechFinal }) {
@@ -164,6 +192,11 @@ async function requestHint() {
   trace.mark("hint.request", { chars: q.length, sinceSttFinalMs: sinceFinal, model: settings.model });
   let res = null;
   let shownPartial = false;
+  if (isCareerWalkthrough(q)) {
+    renderHint(routeCareerHint({ is_question: true, question_summary: "Walk through your career", question_type: "career_walkthrough",
+      career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" }, q), { partial: true });
+    shownPartial = true;
+  }
   const titles = settings.stories.map((s) => s.title);
   setHintState("Analysing\u2026");
   try {
@@ -176,7 +209,7 @@ async function requestHint() {
       // second before the answer shape does. Provisional until the final validated hint.
       onPartial: (p) => {
         if (version !== sessionVersion) return;
-        const h = provisionalHint(p, titles);
+        const h = routeCareerHint(provisionalHint(routeCareerHint(p, q), titles), q);
         if (!h) return;
         if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
         renderPartial(h);
@@ -184,7 +217,8 @@ async function requestHint() {
     });
     if (version !== sessionVersion) return;
     if (partialFrame) { cancelAnimationFrame(partialFrame); partialFrame = 0; } pendingPartial = null;
-    const { ok, errors, hint } = validateHint(res.hint, titles);
+    const { ok, errors, hint: validated } = validateHint(routeCareerHint(res.hint, q), titles);
+    const hint = routeCareerHint(validated, q);
     if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
     if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) { addQuestion(hint); lastHint = hint; }
@@ -226,6 +260,7 @@ function clearHintCard() {
   ui.stories.innerHTML = ""; ui.keywords.innerHTML = ""; ui.watch.textContent = "";
   ui.gapNotice.hidden = true; ui.shapeBox.hidden = true; ui.cvLeads.hidden = true;
   ui.technicalNotes.hidden = true; ui.technicalPoints.innerHTML = "";
+  ui.career.hidden = true; ui.stories.hidden = false;
 }
 
 // A new validated hint that is a real question. See lib/questionQueue.js for why a hint
@@ -319,13 +354,85 @@ function setQuestionStatus(q, status) {
   renderQueue();
 }
 
+let careerView = { key: "", index: 0, newest: false };
+let careerCv = null, careerRoles = [];
+
+function renderCareer(h) {
+  ui.career.hidden = h.question_type !== "career_walkthrough";
+  if (ui.career.hidden) return;
+  if (careerCv !== settings.cvText) {
+    careerCv = settings.cvText || "";
+    careerRoles = careerTimeline(careerCv);
+  }
+  const key = h.career_key || h.question_summary;
+  if (careerView.key !== key) careerView = { key, index: 0, newest: false };
+  ui.careerOrder.value = careerView.newest ? "newest" : "oldest";
+  ui.careerOverview.innerHTML = "";
+  for (const cue of h.career_overview || []) {
+    const li = document.createElement("li"); li.textContent = cue; ui.careerOverview.appendChild(li);
+  }
+  const first = careerRoles[0], last = careerRoles.at(-1);
+  ui.careerSummary.textContent = first
+    ? `${careerRoles.length} roles · ${first.from} → ${last.to}. Start with a brief overview, then follow the roles and close with the fit for this job.`
+    : careerCv ? "Dated roles could not be separated reliably. Use the CV below to walk through the complete history."
+      : "Upload or paste the candidate's CV in Settings to see the complete career timeline.";
+  ui.careerClose.hidden = !careerRoles.length;
+  renderCareerRole();
+}
+
+function renderCareerRole() {
+  const roles = careerView.newest ? [...careerRoles].reverse() : careerRoles;
+  careerView.index = Math.max(0, Math.min(careerView.index, roles.length - 1));
+  ui.careerRoles.innerHTML = "";
+  ui.careerAllRoles.textContent = `All ${roles.length} roles — jump to any role`;
+  roles.forEach((role, index) => {
+    const button = document.createElement("button");
+    button.textContent = `${index + 1}. ${role.employer || role.title} · ${role.from}`;
+    if (index === careerView.index) button.setAttribute("aria-current", "step");
+    button.onclick = () => { careerView.index = index; renderCareerRole(); };
+    ui.careerRoles.appendChild(button);
+  });
+  ui.careerRole.innerHTML = "";
+  const role = roles[careerView.index];
+  ui.careerProgress.textContent = role ? `Role ${careerView.index + 1} of ${roles.length}` : "";
+  ui.careerPrev.disabled = !role || careerView.index === 0;
+  ui.careerNext.disabled = !role || careerView.index === roles.length - 1;
+  ui.careerSlider.disabled = !role;
+  ui.careerOrder.disabled = !role;
+  ui.careerSlider.max = String(Math.max(0, roles.length - 1));
+  ui.careerSlider.value = String(careerView.index);
+  ui.careerSlider.setAttribute("aria-valuetext", role ? `${role.title}, ${role.employer}, ${role.dates}` : "No dated roles");
+  if (!role) {
+    const cv = document.createElement("pre"); cv.className = "careerSource"; cv.textContent = careerCv;
+    ui.careerRole.appendChild(cv);
+    return;
+  }
+  const title = document.createElement("h3"); title.textContent = role.title;
+  const employer = document.createElement("p"); employer.textContent = role.employer;
+  const dates = document.createElement("p"); dates.textContent = role.dates;
+  ui.careerRole.append(title, employer, dates);
+  const list = (points) => {
+    const ul = document.createElement("ul");
+    for (const text of points) { const li = document.createElement("li"); li.textContent = text; ul.appendChild(li); }
+    return ul;
+  };
+  ui.careerRole.appendChild(list(role.highlights.slice(0, 3)));
+  if (role.highlights.length > 3) {
+    const details = document.createElement("details"), summary = document.createElement("summary");
+    summary.textContent = "More from this role"; details.append(summary, list(role.highlights.slice(3)));
+    ui.careerRole.appendChild(details);
+  }
+}
+
 function renderHint(h, { partial = false } = {}) {
   ui.hint.classList.remove("empty");
   ui.hint.classList.toggle("partial", partial);
   ui.hintState.textContent = partial ? "\u2026" : "";
   ui.hintState.className = "hintState";
-  ui.qtype.textContent = h.follow_up ? `${h.question_type} \u00b7 follow-up, same story` : h.question_type;
+  const typeLabel = h.question_type === "career_walkthrough" ? "Career walkthrough" : h.question_type;
+  ui.qtype.textContent = h.follow_up ? `${typeLabel} \u00b7 follow-up` : typeLabel;
   ui.question.textContent = h.question_summary;
+  renderCareer(h);
   ui.technicalPoints.innerHTML = "";
   for (const point of h.technical_points || []) {
     const li = document.createElement("li"); li.textContent = point;
@@ -333,6 +440,7 @@ function renderHint(h, { partial = false } = {}) {
   }
   ui.technicalNotes.hidden = h.question_type !== "technical" || !h.technical_points?.length;
   ui.stories.innerHTML = "";
+  ui.stories.hidden = h.question_type === "career_walkthrough";
   for (const s of h.stories) {
     const el = document.createElement("div");
     el.className = "story";
@@ -455,7 +563,7 @@ function gapQuestions() {
 function sessionMetadata() {
   return { id: sessionId, start: sessionStart,
     candidateId: settings.profiles?.activeCandidate ?? null, candidateName: settings.candidateName || "",
-    jobId: settings.profiles?.activeJob ?? null, jobTitle: settings.jobTitle || "" };
+    jobId: settings.profiles?.activeJob ?? null, jobTitle: settings.jobTitle || "", captions: captionSummary(captionSamples) };
 }
 
 function checkpointTranscript() {
@@ -519,6 +627,7 @@ function beginSessionIfNeeded() {
   if (sessionStart !== null) return;
   settings = structuredClone(nextSettings || settings);
   transcriptName = settings.candidateName || "";
+  captionSamples = [];
   sessionId = crypto.randomUUID();
   sessionVersion++;
   sessionStart = Date.now();
@@ -733,6 +842,14 @@ async function stopAll() {
   ui.save.onclick = saveTranscript;
   ui.call.onclick = () => { callHidden = !callHidden; trace.mark(callHidden ? "call.pane.hidden" : "call.pane.shown"); layoutStage(); };
   ui.full.onclick = toggleFullscreen;
+  ui.careerPrev.onclick = () => { careerView.index--; renderCareerRole(); };
+  ui.careerNext.onclick = () => { careerView.index++; renderCareerRole(); };
+  ui.careerSlider.oninput = () => { careerView.index = Number(ui.careerSlider.value); renderCareerRole(); };
+  ui.careerOrder.onchange = () => {
+    careerView.index = Math.max(0, careerRoles.length - 1 - careerView.index);
+    careerView.newest = ui.careerOrder.value === "newest";
+    renderCareerRole();
+  };
   document.addEventListener("fullscreenchange", () => { ui.full.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; });
   let resizeFrame = 0;
   window.addEventListener("resize", () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(layoutStage); });

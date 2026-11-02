@@ -166,3 +166,67 @@ test("final captions checkpoint the transcript and reopening restores it without
   assert.equal(reopened.run("sessionStart"), null);
   assert.match(reopened.$("status").textContent, /Recovered an interrupted interview/);
 });
+
+test("resume walkthrough shows every role immediately and navigation survives the LLM response", async () => {
+  const result = deferred();
+  const cvText = "PROFESSIONAL EXPERIENCE\n" + Array.from({ length: 7 }, (_, n) => 6 - n)
+    .map(i => `Engineer ${i} January ${2000 + i} - December ${2000 + i}\nExample Employer ${i}\n- Maintained system ${i}`).join("\n") + "\nEDUCATION\nExample College";
+  const h = await panelHarness({ getHint: () => result.promise,
+    loadSettings: async () => ({ cvText, stories: [], deepgramKey: "example", sttProvider: "deepgram", model: "example" }),
+  });
+  await h.$("btnMic").onclick();
+  h.connections[0].opts.onFinal({ speaker: "interviewer", text: "Can you walk me through your resume?", speechFinal: true });
+  const response = h.run("requestHint()");
+  assert.equal(h.$("careerWalkthrough").hidden, false);
+  assert.equal(h.$("careerRoles").children.length, 7);
+  assert.equal(h.$("careerRole").children[0].textContent, "Engineer 0");
+  h.$("careerRoles").children[2].onclick();
+  assert.equal(h.$("careerProgress").textContent, "Role 3 of 7");
+  result.resolve({ hint: { is_question: true, question_type: "experience", question_summary: "Career summary", stories: [{ title: "Only one story", cue: "Narrow selection" }], keywords: [],
+    career_overview: ["Engineering roles across seven organizations", "Repeated experience maintaining systems"] }, usage: {}, ms: 1 });
+  await response;
+  assert.equal(h.$("careerProgress").textContent, "Role 3 of 7");
+  assert.equal(h.$("careerOverview").children.length, 2);
+  assert.equal(h.$("stories").hidden, true);
+  assert.equal(h.$("gapNotice").hidden, true);
+  assert.equal(h.run("gapQuestions().length"), 0);
+  h.$("careerSlider").value = "6"; h.$("careerSlider").oninput();
+  assert.equal(h.$("careerRole").children[0].textContent, "Engineer 6");
+  assert.equal(h.$("careerNext").disabled, true);
+  h.$("careerOrder").value = "newest"; h.$("careerOrder").onchange();
+  assert.equal(h.$("careerProgress").textContent, "Role 1 of 7");
+  assert.equal(h.$("careerRole").children[0].textContent, "Engineer 6");
+  h.$("careerNext").onclick();
+  assert.equal(h.$("careerRole").children[0].textContent, "Engineer 5");
+  h.$("careerPrev").onclick();
+  assert.equal(h.$("careerRole").children[0].textContent, "Engineer 6");
+});
+
+test("unrecognized CV layout preserves the whole source instead of silently dropping jobs", async () => {
+  const h = await panelHarness({ loadSettings: async () => ({ cvText: "Undated role at Example Co", stories: [], deepgramKey: "example" }) });
+  h.run('renderHint({ question_type: "career_walkthrough", question_summary: "Career", stories: [], keywords: [] })');
+  assert.match(h.$("careerSummary").textContent, /could not be separated/);
+  assert.equal(h.$("careerRole").children[0].textContent, "Undated role at Example Co");
+  assert.equal(h.$("gapNotice").hidden, true);
+});
+
+test("interim captions update one live node while keeping history and pending hints independent", async () => {
+  const result = deferred();
+  const h = await panelHarness({ getHint: () => result.promise });
+  await h.$("btnMic").onclick();
+  const events = h.connections[0].opts;
+  events.onFinal({ speaker: "interviewer", text: "A question?", speechFinal: true });
+  const history = h.$("transcript").children[0];
+  const pending = h.run("requestHint()");
+  events.onInterim({ speaker: "candidate", text: "First words", backlogMs: 250 });
+  const live = h.$("transcript").children.at(-1);
+  assert.equal(live.lastChild.nodeValue || live.lastChild.textContent, "First words");
+  events.onInterim({ speaker: "candidate", text: "First words keep flowing", backlogMs: 150 });
+  assert.equal(h.$("transcript").children[0], history);
+  assert.equal(h.$("transcript").children.at(-1), live);
+  assert.equal(live.lastChild.nodeValue, "First words keep flowing");
+  assert.match(live.children[0].textContent, /live/);
+  assert.equal(h.run("captionSamples.length"), 2);
+  result.resolve({ hint: { is_question: false, question_type: "none", question_summary: "", stories: [], keywords: [] }, usage: {}, ms: 1 });
+  await pending;
+});

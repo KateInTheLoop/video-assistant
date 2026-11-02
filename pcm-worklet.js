@@ -4,6 +4,7 @@ class PcmWorklet extends AudioWorkletProcessor {
     super();
     this.buf = [];
     this.len = 0;
+    this.chunkSamples = Math.ceil(sampleRate * 0.05); // ~50 ms at the actual AudioContext rate
   }
   process(inputs) {
     const ch = inputs[0]?.[0];
@@ -15,7 +16,7 @@ class PcmWorklet extends AudioWorkletProcessor {
     }
     this.buf.push(out);
     this.len += out.length;
-    if (this.len >= 1600) { // ~100ms at 16kHz
+    if (this.len >= this.chunkSamples) {
       const merged = new Int16Array(this.len);
       let o = 0;
       for (const b of this.buf) { merged.set(b, o); o += b.length; }
