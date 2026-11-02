@@ -1,71 +1,108 @@
-# Interview Coach — MVP implementation plan (agent-driven)
+# Interview Coach — plan v2 (post-MVP)
 
-Target: **Linux + Chrome, MVP usable in a real interview.** Windows (system audio) comes after MVP.
+Target: **Linux + Chrome**, used in real interviews. The MVP plan (M0–M6) is complete and was
+verified in three real calls; its node table stays in STATE.md for history. This plan picks up
+from what those calls taught us.
 
 ## How the agent works this plan (one tick = one 20-minute pass)
 
 1. Read `STATE.md`. Pick the first node whose status is `todo` and whose `deps` are all `done`.
    If a node is `blocked`, skip it and note why in STATE.md.
-2. Implement only that node. Keep changes small enough to finish in one tick; if not, split it into sub-nodes in STATE.md and finish the first.
-3. Verify with the node's **Done when** check. Run `node --check` on every changed JS file and `npm test` if tests exist.
-4. Update STATE.md (status, one-line note, blockers), `git add -A && git commit`.
+2. Implement only that node. Keep changes small enough to finish in one tick; if not, split it
+   into sub-nodes in STATE.md and finish the first.
+3. Verify with the node's **Done when** check. `node --check` every changed JS file, `npm test`,
+   `npm run scan` (clean before any push, see CLAUDE.md).
+4. Update STATE.md (status, one-line note, blockers), commit, push the feature branch.
 5. Stop. Do not start a second node in the same tick unless the first took under 5 minutes.
 
-Rules: never generate full answers in hints (keywords, own stories only). Never upload transcripts anywhere. Vanilla JS, no bundler. Ask the user only via STATE.md "Needs human" section; keep going on other nodes meanwhile.
+Rules that do not change: hints are keywords, structure prompts and the candidate's own
+stories, never full answers. Nothing leaves the machine except the recent transcript lines sent
+to Claude. Everything the user enters (profiles included) lives in `chrome.storage.local`. Pure
+logic lives in `lib/` with tests; browser glue is not unit-tested. Vanilla JS, no bundler.
+Synthetic fixtures only; never a real key, CV, transcript or email in a tracked file.
 
 ## Node graph
 
 ```
-M0 Tooling ──► M1 Pure-logic tests ──► M2 Robust capture ──► M3 Hint quality ──► M4 Prep flow ──► M5 Debrief ──► MVP
-                                   └──► M6 Smoke test in real Chrome (parallel, needs human to load extension)
+R0 Stage ──► R1 Profiles + two-tab Settings ──► R2 Import from ai-job-search ──► R4 Practice mode
+R3 STT head-to-head (independent of R1–R4)
+W1 Windows system audio (independent; needs a Windows machine)
 ```
 
-### M0 — Tooling (deps: none)
-- M0.1 `git init`, `.gitignore`, first commit of current scaffold. Done when: `git log` shows a commit.
-- M0.2 `package.json` with `"test": "node --test tests/"`; no dependencies. Done when: `npm test` runs (0 tests OK).
-- M0.3 Check for Chrome/Chromium on this Linux box; if absent write install instructions into STATE.md "Needs human". Done when: STATE.md records result.
+### R0 — Stage: the call's picture beside the coach (deps: none)
+- R0.1 Keep the tab share's video track and show it in a pane beside the coach; side by side
+  when wide, stacked under 900 px; Hide call; Full screen; muted mirror. **Done** (v0.2.0).
+- R0.2 **Needs human:** confirm the tab share offers a picture on this Linux box (Wayland can
+  refuse), and that resizing and full screen never crash the window. Fix what is reported.
 
-### M1 — Pure-logic extraction + tests (deps: M0)
-Goal: move testable logic out of panel.js so the agent can verify without a browser.
-- M1.1 `lib/transcript.js`: `mergeFinal(transcript, line, now)` (same-speaker merge within 4 s), `recent(transcript, n)`. Tests.
-- M1.2 `lib/question.js`: `shouldAskForHint(text, speechFinal, pendingWords)` → `{ask: bool, delayMs}`. Rules: `?` → ask now; `speechFinal` → ask now; <3 words → never; else delay 900 ms. Tests cover "mm-hm", "okay so", multi-sentence.
-- M1.3 `lib/hintSchema.js`: export HINT_SCHEMA + `validateHint(obj)` (shape, ≤4 keywords, each ≤3 words, ≤2 stories, story titles ∈ bank). Tests. Panel must drop any hint that fails validation.
-- M1.4 Rewire `panel.js` and `claude.js` to import from `lib/`. Done when: `node --check` passes, `npm test` green.
+### R1 — Profiles and a two-tab Settings page (deps: R0)
+Goal: one project per candidate, per job, or both. A session picks one candidate and one job.
+- R1.1 `lib/profiles.js` (pure): data model `{ candidates: {id: {name, cvText, stories, resources}},
+  jobs: {id: {title, jobDescription, resources}}, activeCandidate, activeJob }`;
+  `flatten(profiles)` returns today's flat settings (`cvText`, `stories`, `jobDescription`,
+  `resources` = candidate + job materials) so `panel.js`, `hintRequest.js` and the tiers do not
+  change; `migrate(flatSettings)` turns the current flat fields into one "Default" candidate and
+  one "Default" job. Tests: flatten, migrate idempotent, switching active ids.
+- R1.2 `storage.js`: `loadSettings()` returns keys/provider/model/tier plus the flattened active
+  profiles; `saveSettings` writes into the active profiles. Existing users migrate once on load.
+  Done when: a panel session after migration behaves exactly as before (same context report).
+- R1.3 Settings tab **Start** (super simple): Anthropic key, STT provider + key, live-hint model,
+  "Candidate ▾" and "Job ▾" dropdowns with New / Rename / Duplicate / Delete, the key-status
+  line, and the "What the coach sees" total as one number. Nothing else.
+- R1.4 Settings tab **Content**: "About you" (name, CV upload/paste, story bank with draft /
+  guided interview, materials: LinkedIn, notes) and "About the job" (title, job description,
+  materials: cover letter, company research, likely questions + gap report). Tier dropdown and
+  the full context table live here. Done when: every existing control is reachable on exactly
+  one tab and the Start tab fits one screen at 1280×800 without scrolling.
+- R1.5 Export / import one candidate or one job as JSON (extend `lib/bank.js` round-trip tests).
 
-### M2 — Robust capture (deps: M1)
-- M2.1 Reconnect: if Deepgram socket closes with non-1000 code, retry with backoff (1 s, 2 s, 4 s, max 3) while the media stream is live; show status. Done when: logic lives in `stt.js` with a unit-testable `backoffDelays()`.
-- M2.2 Mic permission fallback: if `getUserMedia` throws `NotAllowedError` in the popup window, show a link that opens `options.html` where the user grants mic once. Done when: options.html has a "Test microphone" button that requests the mic.
-- M2.3 Web Speech API fallback for the **mic only** when no Deepgram key is set (`webkitSpeechRecognition`, continuous, interim). Interviewer stream still requires Deepgram; status text explains. Done when: panel works with only an Anthropic key for mic captions.
-- M2.4 Linux note: `getDisplayMedia` system audio is unavailable; UI copy must say "pick the meeting tab and tick Share tab audio". Verify copy present. (Windows system-audio is a post-MVP node W1.)
+### R2 — Import a profile from ai-job-search (deps: R1)
+The user's `lib/parseAiJobSearch.js` parses `CLAUDE.md` (identity, languages, education,
+experience, skills), `07-interview-prep.md` (STAR stories), plus behavioral, writing-style and
+job-evaluation files.
+- R2.1 Commit the parser with tests on synthetic fixture text (a fake "Alice Chen"-style profile
+  with placeholders, two STAR stories, one table). Fix any regex that the fixture breaks.
+- R2.2 **Import profile** button on the Content tab: pick the files (multi-select or a folder)
+  → new candidate profile: `name`; `stories` from STAR entries (`tags` joined to a string, as the
+  bank expects, `source: "import"`); `cvText` rendered from experience / education / skills /
+  languages in the same compact plain text the CV upload produces; materials: LinkedIn headline
+  as `linkedin`, traits / strengths / growth areas as `notes`. Job-evaluation framework → a
+  `notes` material on the job side if the user picks a job.
+- R2.3 Preview before save: counts (stories, experience entries, materials), the
+  `validateParsedProfile` errors, and a "merge into existing candidate" option (reuse
+  `mergeStories`). Done when: a synthetic fixture imports into a fresh candidate and the hint
+  context report shows the stories and CV.
 
-### M3 — Hint quality and latency (deps: M1)
-- M3.1 Measure: log hint latency and token usage (`usage.cache_read_input_tokens`) to console and a ring buffer shown in Settings → Diagnostics. Done when: cache reads are non-zero on the second call in a session (verify by reading the log the user pastes, or by a mocked test of the request body: stable system prefix, volatile transcript in user message).
-- M3.2 Debounce: never fire two hint calls <2 s apart; coalesce interviewer fragments. Tests on the pure scheduler.
-- M3.3 Follow-up awareness: include the last hint in the request so a follow-up ("and what did you learn?") is labelled `follow_up: true` and keeps the same story. Extend schema + validator + tests.
-- M3.4 Keyword guard in prompt + validator: reject any keyword >3 words or ending in punctuation. Tests.
-- M3.5 Model switch in Settings: dropdown `claude-opus-5-5` (default) / `claude-haiku-5-5` (fastest). Done when: stored and used.
+### R3 — STT head-to-head, made objective (deps: none; needs one real call)
+- R3.1 "Compare providers" toggle in the coach: run Deepgram and AssemblyAI on the same tab
+  audio for a session; only the primary drives captions and hints, the secondary only logs.
+- R3.2 `lib/sttCompare.js` (pure): per utterance, final latency (audio end → final) and a word
+  diff between the two finals; cost per hour from each provider's published rate. Tests.
+- R3.3 Diagnostics shows the comparison; the user picks the default. Done when: one real call
+  produces a table and STATE records the choice.
 
-### M4 — Prep flow (deps: M3)
-- M4.1 Guided story interview in Settings: Claude asks 10 standard behavioral questions one at a time (text), candidate types/pastes answers, each becomes a story. Structured output. Done when: stories appear in bank with `source: "interview"`.
-- M4.2 Gap report: given JD + bank, list likely questions with no matching story. Done when: shown under "Likely questions" with a ⚠ marker.
-- M4.3 Import/export story bank as JSON. Done when: round-trip test on `lib/bank.js`.
+### R4 — Practice mode (deps: R2)
+- R4.1 Claude as interviewer: questions from the gap report and likely questions for the active
+  job; spoken with browser speech synthesis; the candidate answers into the mic.
+- R4.2 Same hint pipeline and queue as a real call, so the candidate practises with the coach.
+- R4.3 Debrief at the end (existing `claude.debrief`), stored like a real session and marked
+  practice. Done when: a full practice run yields a debrief in Past sessions.
 
-### M5 — Debrief (deps: M2, M3)
-- M5.1 After Stop, one Claude call over the saved transcript: for each question → which story was used, STAR parts hit/missed, one concrete improvement. Structured output; stored with the session. Done when: Settings → Past sessions shows the debrief.
-- M5.2 Pacing stats per answer (seconds talked) computed locally in `lib/pace.js`. Tests.
+### W1 — Windows system audio (deps: none; needs Windows)
+- `getDisplayMedia` screen share with system audio (Windows/ChromeOS), fallback to tab audio.
+  UI copy branches on platform. Test on Windows.
 
-### M6 — Real-Chrome smoke test (deps: M0; **needs human**)
-- M6.1 Human loads unpacked extension, runs a Meet test call, pastes console errors into STATE.md "Human feedback". Agent fixes what's reported. Repeat until the hint card renders in a live call.
-- M6.2 Write `docs/first-run.md` with screenshots placeholders and the exact click sequence.
+## Exit criteria v2
+- [ ] R0.2 confirmed by the user on Linux (picture shows, no crash on resize/full screen).
+- [ ] R1: Start tab fits one screen; switching candidate or job changes the context report.
+- [ ] R2: a synthetic ai-job-search fixture imports end to end.
+- [ ] Time to first useful content (question + stories on the card) under 1.5 s median on
+  Haiku with a warm cache, measured from the trace log.
+- [ ] `npm test` and `npm run scan` green on every push; a tagged release per milestone.
 
-### MVP exit criteria
-- [ ] All M0–M5 nodes done, `npm test` green.
-- [ ] M6.1 confirmed by human in a real Meet call on Linux.
-- [ ] Hint latency < 2.5 s median (from M3.1 log) on Opus, < 1.5 s on Haiku.
-- [ ] No transcript leaves the machine except the recent lines sent to Claude.
-
-## Post-MVP (do not start before exit criteria)
-- W1 Windows: system audio via `getDisplayMedia` screen share with audio (works on Windows/ChromeOS), fallback to tab audio. Test on Windows.
-- P1 Practice mode: Claude plays interviewer with browser TTS, same pipeline, debrief at the end.
-- F1 Firefox port: popup window instead of side panel already; replace `chrome.*` with `browser.*` shim.
-- S1 AssemblyAI as a second STT provider (added 2026-10-24; provider SHIPPED, head-to-head comparison still TODO). `stt-assemblyai.js` with the same `SttStream` interface (Universal-Streaming WebSocket, short-lived token fetched with the API key; verify CORS on the token endpoint from an extension page). Settings: provider dropdown + AssemblyAI key field; `lib/settings.js` validates per provider (AssemblyAI keys are 32 hex, Deepgram 40). Then compare the two in a real call: latency, accent robustness, cost per hour. Keep whichever wins as default.
+## Done in this cycle (reference, outside the original MVP plan)
+Autosave settings with validation and key tests; AssemblyAI provider; question queue with
+answering / answered / moved-on; answer shape + follow-ups; per-question story gaps; CV upload
+(PDF, DOCX, ODT, TXT, MD); extra materials + context tiers; Haiku for live hints, Opus for prep;
+streaming hints with progressive render; cache prewarm; trace points + developer mode; secret
+scanner + pre-push hook + CI; tagged releases (v0.1.0); the stage (v0.2.0).

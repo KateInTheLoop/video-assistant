@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Interview Coach",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live captions and structure hints for video interviews, grounded in your own CV and stories.",
   "permissions": [
     "storage"

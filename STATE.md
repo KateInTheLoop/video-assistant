@@ -24,13 +24,31 @@
 | M4.3 | done | lib/bank.js export/import/merge with round-trip tests; Settings → Backup buttons |
 | M5.1 | done | claude.debrief (per-question story used, STAR flags, went well, improve; overall + top_fix) runs after Stop, stored on session, rendered in Settings → Past sessions |
 | M5.2 | done | lib/pace.js answerStats/paceSummary (long >120s, short <20s, wpm), 3 tests; shown per session and per question |
-| M6.1 | blocked | needs human: load extension in Chrome, run a Meet test call |
+| M6.1 | done | verified in three real Meet calls 2026-10-24 (see Human feedback) |
 | M6.2 | done | docs/first-run.md: install, prep, interview day, after, troubleshooting table; screenshot placeholders |
+| R0.1 | done | stage: call picture beside the coach, hide/show, full screen (v0.2.0) |
+| R0.2 | blocked | needs human: tab video on Linux/Wayland, resize/full-screen never crashes |
+| R1.1 | todo | lib/profiles.js: candidates/jobs model, flatten, migrate |
+| R1.2 | todo | storage.js reads/writes the active profiles; one-time migration |
+| R1.3 | todo | Settings tab Start: keys, provider, model, Candidate/Job dropdowns |
+| R1.4 | todo | Settings tab Content: About you / About the job |
+| R1.5 | todo | export/import one candidate or job as JSON |
+| R2.1 | todo | commit lib/parseAiJobSearch.js with synthetic-fixture tests |
+| R2.2 | todo | Import profile → new candidate (stories, CV text, materials) |
+| R2.3 | todo | import preview + merge into existing candidate |
+| R3.1 | todo | Compare providers: both STT on the same audio, secondary logs only |
+| R3.2 | todo | lib/sttCompare.js: latency, word diff, cost/hour |
+| R3.3 | todo | Diagnostics table; user picks default |
+| R4.1 | todo | practice: Claude asks, browser speech speaks |
+| R4.2 | todo | practice uses the live hint pipeline |
+| R4.3 | todo | practice debrief stored as a session |
+| W1 | todo | Windows system audio (needs Windows) |
 
 ## Needs human
-- M6.1: all code milestones are done. Load the extension unpacked (chrome://extensions → Developer mode → Load unpacked → this folder), add Anthropic + Deepgram keys in Settings, run a short Meet test call, then paste console errors/observations under "Human feedback". Check Settings → Diagnostics for non-zero cache reads on the second hint (M3.1 live confirmation).
+- R0.2: reload the extension (v0.2.0), share the meeting tab, confirm the call's picture appears beside the coach on this Linux box (Wayland may refuse a picture), then resize the window and use Full screen; report any crash or layout break under "Human feedback".
 
 ## Human feedback
+- 2026-10-25 (session 2, stage): user chose a single full-screen window over a floating overlay. The tab share already carried a video track we were stopping; it is now the picture of the call, shown in a grid beside the coach (lib/callView.js decides tracks/visibility/layout, 3 tests). Side by side when wide, stacked under 900 px, Hide call toggle, Full screen via the Fullscreen API; muted video, selfBrowserSurface:"exclude" so the mirror cannot show itself; detach on Stop or when the user ends the share. Window opens at 1280x820. Version 0.2.0. Needs human: confirm tab video capture on Linux/Wayland and that resizing never crashes. 98 tests green.
 - 2026-10-24 (session 2, security + CI/CD): a real AssemblyAI key had reached a test fixture and was pushed to the public repo. User revoked it; I scrubbed it from the working tree and rewrote all history (filter-branch) to purge it, then force-pushed main and the feature branch (0 occurrences remain in origin/main history). Only that one key leaked; Anthropic and Deepgram keys were never in source or history. No transcripts/CV/personal data are tracked (transcripts live only in chrome.storage.local); neutralized fabricated resume lines in a test that named a real company. Added guardrails: scripts/check_secrets.py (fails on real-looking creds/personal emails, allows provably-synthetic fixtures; run with -I), a pre-push hook (npm run hooks) and npm run scan, and CLAUDE.md making the scan mandatory before every push. Added CI/CD: scripts/build.mjs packages dist/interview-coach-v<version>.zip (manifest at archive root, Web-Store-ready); .github/workflows/ci.yml (scan+tests+build on every push/PR) and release.yml (on v* tag: scan, tests, tag/manifest match, build, publish a GitHub Release with the zip). 95 tests green.
 - 2026-10-24 (session 2, latency round 2, branch features/realtime-improvements-v1): cold first hint was the outlier (first token 3.8 s once: the cache write). A prewarm request that does NOT carry output_config writes a different prefix (2,938 vs 4,174 tokens: the schema is ~1.2k tokens of the cached prefix), so buildPrewarmRequest keeps the full real body and asks for max_tokens 1 with a "warm-up" user turn. Live: prewarm 0.9 s / 1 output token, then the first real hint read all 4,174 tokens (2.0 s vs 2.6 s cold). Panel prewarms at session start, 1.5 s after any settings change during a session, and when the cache has not been touched for 50 min. Partial renders are throttled to one per animation frame. Trace marks cache.prewarm.start/done/error. 95 tests green.
 - 2026-10-24 (session 2, latency): measured on Haiku 5.5 with streaming: first token 0.6-1.0 s, then ~1.4 s of generation for ~350 output tokens; question/stories/keywords are complete ~1 s in, answer_shape/follow_ups/cv_leads cost the last second. Fast mode (speed:"fast") is Opus-only, so the lever is streaming: getHint now streams, lib/partialJson.js completes the JSON prefix, provisionalHint() validates whatever has arrived and the card renders it (dimmed, chips hidden) until the final hint lands; cv_leads moved before answer_shape in the schema so they stream earlier. Live: stories on the card at 1.2 s vs 2.6 s total on a cached call. Trace points (lib/trace.js): stt.final/interim/utteranceEnd, sched.plan, hint.request/ttft/partial/validator/done/error, stt.error, status.error, session.start, with ms offsets from session start and "ms after speech" on each hint. Developer mode switch (Settings → Diagnostics) logs them to the console, shows first-token/total/after-speech in the status line, and Save transcript also downloads a .trace.log. 94 tests green.

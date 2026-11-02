@@ -10,11 +10,13 @@ import { makeEntry, pushEntry } from "./lib/diag.js";
 import { answerStats, paceSummary } from "./lib/pace.js";
 import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questionQueue.js";
 import { createTrace, formatTrace } from "./lib/trace.js";
+import { callTracks, showCallPane, stageLayout } from "./lib/callView.js";
 import { provisionalHint } from "./lib/hintSchema.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
   tab: $("btnTab"), mic: $("btnMic"), stop: $("btnStop"), status: $("status"),
+  call: $("btnCall"), full: $("btnFull"), stage: $("stage"), callPane: $("callPane"), callVideo: $("callVideo"),
   hint: $("hint"), qtype: $("qtype"), question: $("question"), stories: $("stories"),
   keywords: $("keywords"), watch: $("watch"), transcript: $("transcript"),
   talk: $("talk"), paceWarn: $("paceWarn"),
@@ -498,22 +500,61 @@ function sttFor(speaker) {
   return stream;
 }
 
+// --- The stage: the call's picture beside the coach ---------------------------------
+
+let callHidden = false; // the user's in-session choice; the picture stays live underneath
+
+// Muted on purpose: the call's audio goes to the captions and never back out of this window.
+// selfBrowserSurface:"exclude" keeps this window out of the share picker, so the mirror can
+// never show itself.
+function attachCall(video) {
+  if (!video) return detachCall();
+  ui.callVideo.srcObject = new MediaStream([video]);
+  ui.call.disabled = false;
+  video.onended = () => { trace.mark("call.video.ended"); detachCall(); };
+  const st = video.getSettings?.() || {};
+  trace.mark("call.video.on", { w: st.width, h: st.height, fps: st.frameRate });
+  layoutStage();
+}
+
+function detachCall() {
+  ui.callVideo.srcObject = null;
+  ui.call.disabled = true;
+  layoutStage();
+}
+
+function layoutStage() {
+  const withCall = showCallPane({ hasVideo: !!ui.callVideo.srcObject, hidden: callHidden });
+  ui.callPane.hidden = !withCall;
+  ui.stage.classList.toggle("withCall", withCall);
+  ui.stage.classList.toggle("stacked", stageLayout({ width: window.innerWidth, withCall }) === "stacked");
+  ui.call.textContent = callHidden ? "Show call" : "Hide call";
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) return document.exitFullscreen();
+  document.documentElement.requestFullscreen().catch((e) => setStatus(`Full screen refused: ${e.message}`, true));
+}
+
 async function captureTab() {
   if (!sttKey()) return setStatus(`Add a ${sttProviderName()} key in Settings first.`, true);
   try {
-    // Chrome requires video:true to offer the "share tab audio" checkbox; we drop the video track.
+    // Chrome only offers the "Share tab audio" checkbox when video is requested too. The video
+    // track is the picture of the call shown beside the coach (see attachCall).
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, selfBrowserSurface: "exclude" });
-    stream.getVideoTracks().forEach((t) => t.stop());
-    if (!stream.getAudioTracks().length) {
+    const { audio, video } = callTracks(stream);
+    if (!audio) {
+      stream.getTracks().forEach((t) => t.stop());
       return setStatus("No audio in that share. Pick the meeting *tab* and tick 'Share tab audio'.", true);
     }
     beginSessionIfNeeded();
     media.interviewer = stream;
     streams.interviewer = sttFor("interviewer");
     await streams.interviewer.start(stream);
-    stream.getAudioTracks()[0].onended = stopAll;
+    audio.onended = stopAll;
+    attachCall(video);
     ui.tab.classList.add("active"); ui.stop.disabled = false;
-    setStatus("Call audio live. Now capture your mic.");
+    setStatus(video ? "Call live, picture on the left. Now capture your mic." : "Call audio live. Now capture your mic.");
   } catch (e) { setStatus(e.message, true); }
 }
 
@@ -550,6 +591,7 @@ async function stopAll() {
     streams[sp]?.stop(); streams[sp] = null;
     media[sp]?.getTracks().forEach((t) => t.stop()); media[sp] = null;
   }
+  detachCall();
   stopTalkClock();
   ui.tab.classList.remove("active"); ui.mic.classList.remove("active"); ui.stop.disabled = true;
   if (transcript.length) {
@@ -585,6 +627,12 @@ async function stopAll() {
   ui.mic.onclick = captureMic;
   ui.stop.onclick = stopAll;
   ui.save.onclick = saveTranscript;
+  ui.call.onclick = () => { callHidden = !callHidden; trace.mark(callHidden ? "call.pane.hidden" : "call.pane.shown"); layoutStage(); };
+  ui.full.onclick = toggleFullscreen;
+  document.addEventListener("fullscreenchange", () => { ui.full.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; });
+  let resizeFrame = 0;
+  window.addEventListener("resize", () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(layoutStage); });
+  layoutStage();
   ui.hintActions.onclick = (e) => {
     const act = e.target.dataset?.act;
     if (!act) return;

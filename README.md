@@ -43,6 +43,15 @@ The status line shows first-token and total time per hint and how long after the
 speech it arrived, and Save transcript also downloads an `interview-….trace.log`. It changes
 nothing about what is sent to Claude.
 
+## One screen: the call beside the coach
+
+When you share the meeting tab (step 1), its picture appears in a large pane with the coach
+beside it; click **Full screen** to fill the monitor. The pane is a mirror of the shared tab:
+watch and listen there, but your camera, mute and leave stay in the real meeting tab. **Hide
+call** collapses the pane; a narrow window stacks the call above the coach. The mirror is
+muted, so the call's audio is never played back. Verified on Chrome; on Linux under Wayland,
+check that the tab share offers a picture at all.
+
 ## Install from a release
 
 Each tagged version has a ready `.zip` on the repo's Releases page.

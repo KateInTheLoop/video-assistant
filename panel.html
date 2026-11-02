@@ -11,53 +11,66 @@
     <button id="btnTab" class="primary">1. Capture call audio</button>
     <button id="btnMic">2. Capture my mic</button>
     <button id="btnStop" disabled>Stop</button>
+    <button id="btnCall" class="small" disabled title="Show or hide the picture of the shared tab">Hide call</button>
+    <button id="btnFull" class="small" title="Fill the screen with the call and the coach">Full screen</button>
     <a href="options.html" target="_blank" class="link">Settings</a>
   </div>
   <div id="status" class="status">Ready. Click 1 and pick the meeting's Chrome Tab with "Share tab audio" ticked, then click 2.</div>
 </header>
 
-<div id="bankWarn" class="banner" hidden>
-  No stories in your bank, so hints can only give generic keywords.
-  <a href="options.html" target="_blank">Add your CV and stories in Settings</a> to get hints that point at your own experience.
-</div>
+<main id="stage" class="stage">
+  <!-- The shared tab's picture. A mirror: watch and listen here, but camera, mute and leave
+       stay in the real meeting tab. Muted so the call's audio is never played back. -->
+  <section id="callPane" class="callPane" hidden>
+    <video id="callVideo" autoplay muted playsinline></video>
+    <div class="callNote">Mirror of the shared tab. Camera, mute and leave stay in the real meeting.</div>
+  </section>
 
-<section id="hint" class="hint empty">
-  <div class="hintTop">
-    <div class="qtype" id="qtype"></div>
-    <div id="hintState" class="hintState"></div>
+  <div class="coach">
+    <div id="bankWarn" class="banner" hidden>
+      No stories in your bank, so hints can only give generic keywords.
+      <a href="options.html" target="_blank">Add your CV and stories in Settings</a> to get hints that point at your own experience.
+    </div>
+
+    <section id="hint" class="hint empty">
+      <div class="hintTop">
+        <div class="qtype" id="qtype"></div>
+        <div id="hintState" class="hintState"></div>
+      </div>
+      <div class="question" id="question">Waiting for a question…</div>
+      <div class="gapNotice" id="gapNotice" hidden></div>
+      <div class="stories" id="stories"></div>
+      <div class="keywords" id="keywords"></div>
+      <div class="watch" id="watch"></div>
+      <div class="cvLeads" id="cvLeads" hidden></div>
+      <details class="shape" id="shapeBox" hidden>
+        <summary>Answer shape &amp; likely follow-ups</summary>
+        <ul class="shapeList" id="answerShape"></ul>
+        <div class="followUps" id="followUps"></div>
+      </details>
+      <div class="hintActions" id="hintActions" hidden>
+        <button data-act="answering" class="act">Answer this</button>
+        <button data-act="later" class="act">Think about it</button>
+        <button data-act="dismissed" class="act">Move on</button>
+      </div>
+    </section>
+
+    <section class="queue">
+      <div class="queueHead">
+        <span>Questions</span>
+        <button id="btnSave" class="small" disabled>Save transcript</button>
+      </div>
+      <ol id="questions" class="questions"><li class="qEmpty">Detected questions will appear here. Click one to bring its hint back.</li></ol>
+    </section>
+
+    <section class="pace">
+      <span>You've been talking <b id="talk">0s</b></span>
+      <span id="paceWarn"></span>
+    </section>
+
+    <section id="transcript" class="transcript"></section>
   </div>
-  <div class="question" id="question">Waiting for a question…</div>
-  <div class="gapNotice" id="gapNotice" hidden></div>
-  <div class="stories" id="stories"></div>
-  <div class="keywords" id="keywords"></div>
-  <div class="watch" id="watch"></div>
-  <div class="cvLeads" id="cvLeads" hidden></div>
-  <details class="shape" id="shapeBox" hidden>
-    <summary>Answer shape &amp; likely follow-ups</summary>
-    <ul class="shapeList" id="answerShape"></ul>
-    <div class="followUps" id="followUps"></div>
-  </details>
-  <div class="hintActions" id="hintActions" hidden>
-    <button data-act="answering" class="act">Answer this</button>
-    <button data-act="later" class="act">Think about it</button>
-    <button data-act="dismissed" class="act">Move on</button>
-  </div>
-</section>
-
-<section class="queue">
-  <div class="queueHead">
-    <span>Questions</span>
-    <button id="btnSave" class="small" disabled>Save transcript</button>
-  </div>
-  <ol id="questions" class="questions"><li class="qEmpty">Detected questions will appear here. Click one to bring its hint back.</li></ol>
-</section>
-
-<section class="pace">
-  <span>You've been talking <b id="talk">0s</b></span>
-  <span id="paceWarn"></span>
-</section>
-
-<section id="transcript" class="transcript"></section>
+</main>
 
 <script type="module" src="panel.js"></script>
 </body>
