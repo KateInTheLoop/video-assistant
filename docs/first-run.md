@@ -50,6 +50,10 @@ Wear headphones. Without them the mic hears the interviewer through your speaker
   all dated roles from the CV, a slider and Previous/Next buttons. Click any role to jump to it;
   use the Order dropdown to switch between oldest-first and newest-first. Read the first few
   responsibilities on each card and open **More from this role** for the remaining CV details.
+- "Tell me about your experience with X" filters the timeline to that topic, shows exact CV
+  evidence and related prepared stories, and adds cues for one connected narrative. Years-of-
+  experience questions show a caveated employment-window bound rather than inventing continuous
+  skill tenure; undated skills remain visible with unknown duration.
 - Keywords are prompts for your own words, never a script. Look at them, then look back at the camera.
 - The talk timer warns at 90 seconds and again at two minutes.
 - "follow-up, same story" means stay on the story you were telling.

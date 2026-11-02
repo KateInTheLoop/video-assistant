@@ -10,6 +10,21 @@ and an option to reverse the order. Role dates, employers and duties come direct
 uploaded CV, independently of the model's story shortlist. The timeline appears before the
 model finishes its overview. An unrecognized CV layout shows the source text for review.
 
+"Tell me about your experience with X" opens a topic-specific storyline with relevant roles
+in chronological order, exact CV evidence, connected prepared examples and short cues linking
+early exposure, development and recent work to the job. "How many years with Y?" adds dated
+evidence: overlapping role windows count once, gaps are excluded, and an employment-window
+upper bound is explicitly distinguished from confirmed skill tenure. Undated skills/stories
+can still help while duration remains unknown. Related roles suggested by the model require
+source quotations and are excluded from the numeric bound. Short follow-ups such as "and
+with Workday?" change topic and retain the duration context.
+
+The live coach's maintained instructions are [skills/interview-coach/SKILL.md](skills/interview-coach/SKILL.md).
+The extension loads this file once when its window opens and includes its body in every live
+Claude system prompt, including cache warmup. The release ZIP includes it. After changing
+the skill, close and reopen the coach (or reload the extension) to load the new instructions.
+The application supplies the response schema and enforces evidence checks separately.
+
 ## Install (developer mode)
 1. `chrome://extensions` → enable Developer mode → Load unpacked → pick this folder.
 2. Click the extension icon → the coach opens as its own window. Drag it to the second monitor.

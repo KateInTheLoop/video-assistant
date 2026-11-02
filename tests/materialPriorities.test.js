@@ -5,6 +5,7 @@ import { buildHintRequest, buildPrewarmRequest, contextReport } from "../lib/hin
 import { migrate, applyFlat, addJob, flatten, setActive } from "../lib/profiles.js";
 import { importProfile, exportProfile } from "../lib/bank.js";
 import { extractStories, gapReport, storyFromAnswer } from "../claude.js";
+import { INTERVIEW_SKILL } from "../lib/interviewSkill.js";
 
 test("notes default highest; ties favor this job; explicit priorities and Off are respected", () => {
   const resources = [{ kind: "company", text: "Company" }, { kind: "notes", text: "General notes" }, { kind: "notes", text: "Job notes", scope: "job" }];
@@ -37,7 +38,7 @@ test("notes reach the actual live and cached requests in every tier; Off never r
     assert.match(prefix, /Expected domain: inventory costing/);
     assert.doesNotMatch(prefix, /Off private draft/);
     if (tier !== "full") assert.doesNotMatch(prefix, /Background company text/);
-    assert.equal(request.system[0].text.includes("A Must focus note should materially shape"), true);
+    assert.equal(request.system[0].text.includes(INTERVIEW_SKILL), true, "the runtime skill must be delivered with ranked notes");
     assert.ok(prefix.indexOf("Expected domain:") < prefix.indexOf("# Story bank"));
     assert.deepEqual(warm.system, request.system);
     assert.equal(contextReport(ctx).parts.find(p => p.label === "Additional materials").included, true);

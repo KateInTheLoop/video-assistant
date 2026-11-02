@@ -12,7 +12,10 @@ import { shouldSupersede, queueOrder, settleAnswering, LIVE } from "./lib/questi
 import { createTrace, formatTrace } from "./lib/trace.js";
 import { callTracks, showCallPane, stageLayout } from "./lib/callView.js";
 import { provisionalHint, hasStoryGap } from "./lib/hintSchema.js";
-import { careerTimeline, isCareerWalkthrough, routeCareerHint } from "./lib/careerTimeline.js";
+import { careerTimeline, isCareerWalkthrough } from "./lib/careerTimeline.js";
+import { experienceIntent, routeQuestionHint } from "./lib/experienceContext.js";
+import { topicTimeline, topicMatches, experienceDuration, quoteFromRole } from "./lib/experienceTimeline.js";
+import { tierIncludes } from "./lib/context.js";
 import { captionSummary } from "./lib/sttLatency.js";
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +33,7 @@ const ui = {
   careerRole: $("careerRole"), careerProgress: $("careerProgress"), careerPrev: $("careerPrev"), careerNext: $("careerNext"),
   careerSlider: $("careerSlider"), careerOrder: $("careerOrder"), careerClose: $("careerClose"),
   careerAllRoles: $("careerAllRoles"),
+  careerTitle: $("careerTitle"), experienceDuration: $("experienceDuration"), experienceExamples: $("experienceExamples"), experienceStories: $("experienceStories"),
 };
 
 // Detected questions, newest last. Each: {id, at, hint, status}. status drives the action chips.
@@ -192,16 +196,18 @@ async function requestHint() {
   trace.mark("hint.request", { chars: q.length, sinceSttFinalMs: sinceFinal, model: settings.model });
   let res = null;
   let shownPartial = false;
-  if (isCareerWalkthrough(q)) {
-    renderHint(routeCareerHint({ is_question: true, question_summary: "Walk through your career", question_type: "career_walkthrough",
-      career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" }, q), { partial: true });
+  const topicIntent = experienceIntent(q, lastHint);
+  const route = (hint) => routeQuestionHint(hint, q, lastHint);
+  if (topicIntent || isCareerWalkthrough(q)) {
+    renderHint(route({ is_question: true, question_summary: topicIntent ? `Experience with ${topicIntent.topic}` : "Walk through your career", question_type: "career_walkthrough",
+      career_overview: [], stories: [], keywords: [], cv_leads: [], answer_shape: [], follow_ups: [], watch_out: "" }), { partial: true });
     shownPartial = true;
   }
   const titles = settings.stories.map((s) => s.title);
   setHintState("Analysing\u2026");
   try {
     res = await getHint({
-      apiKey: settings.anthropicKey, model: settings.model, transcript,
+      apiKey: settings.anthropicKey, model: settings.model, transcript, question: q,
       stories: settings.stories, jobDescription: settings.jobDescription, cvText: settings.cvText,
       resources: settings.resources, questions, lastHint, tier: settings.contextTier,
       onFirstToken: (ms) => { if (version === sessionVersion) trace.mark("hint.ttft", { ms: Math.round(ms) }); },
@@ -209,7 +215,7 @@ async function requestHint() {
       // second before the answer shape does. Provisional until the final validated hint.
       onPartial: (p) => {
         if (version !== sessionVersion) return;
-        const h = routeCareerHint(provisionalHint(routeCareerHint(p, q), titles), q);
+        const h = route(provisionalHint(route(p), titles));
         if (!h) return;
         if (!shownPartial) { shownPartial = true; trace.mark("hint.partial", { ms: Math.round(performance.now() - t0), stories: h.stories.length, keywords: h.keywords.length }); }
         renderPartial(h);
@@ -217,8 +223,8 @@ async function requestHint() {
     });
     if (version !== sessionVersion) return;
     if (partialFrame) { cancelAnimationFrame(partialFrame); partialFrame = 0; } pendingPartial = null;
-    const { ok, errors, hint: validated } = validateHint(routeCareerHint(res.hint, q), titles);
-    const hint = routeCareerHint(validated, q);
+    const { ok, errors, hint: validated } = validateHint(route(res.hint), titles);
+    const hint = route(validated);
     if (errors.length) { console.warn("hint validator:", errors); trace.mark("hint.validator", { dropped: errors.length, errors }); }
     if (!ok) throw new Error("Hint rejected by validator; see console.");
     if (hint.is_question) { addQuestion(hint); lastHint = hint; }
@@ -355,28 +361,88 @@ function setQuestionStatus(q, status) {
 }
 
 let careerView = { key: "", index: 0, newest: false };
-let careerCv = null, careerRoles = [];
+let careerCv = null, allCareerRoles = [], careerRoles = [];
+let experienceHint = null;
+let experienceQuestionHint = null;
+
+function usedStoryButton(question, title) {
+  const button = document.createElement("button"); button.className = "small";
+  button.textContent = question.usedStories?.includes(title) ? "Used ✓ — undo" : "Used this story";
+  button.onclick = () => {
+    const used = new Set(question.usedStories || []);
+    if (used.has(title)) used.delete(title); else used.add(title);
+    question.usedStories = [...used]; renderHint(question.hint);
+  };
+  return button;
+}
+
+function preparedExample(story) {
+  const detail = document.createElement("details"), summary = document.createElement("summary");
+  summary.textContent = `Prepared story: ${story.title} — role/dates unconfirmed`; detail.appendChild(summary);
+  const note = document.createElement("small"); note.textContent = "Prepared example; its role connection and dates are not independently established."; detail.appendChild(note);
+  const question = questions.find(q => q.id === selectedId && q.hint === experienceQuestionHint);
+  if (question) detail.appendChild(usedStoryButton(question, story.title));
+  for (const [label, key] of [["Situation", "situation"], ["Action", "action"], ["Result", "result"]]) {
+    if (!story[key]) continue;
+    const line = document.createElement("p"); line.textContent = `${label}: ${story[key]}`; detail.appendChild(line);
+  }
+  return detail;
+}
 
 function renderCareer(h) {
-  ui.career.hidden = h.question_type !== "career_walkthrough";
+  const topicMode = h.question_type === "topic_experience";
+  ui.career.hidden = !topicMode && h.question_type !== "career_walkthrough";
   if (ui.career.hidden) return;
   if (careerCv !== settings.cvText) {
     careerCv = settings.cvText || "";
-    careerRoles = careerTimeline(careerCv);
+    allCareerRoles = careerTimeline(careerCv);
   }
+  const previous = (careerView.newest ? [...careerRoles].reverse() : careerRoles)[careerView.index]?.roleIndex;
   const key = h.career_key || h.question_summary;
-  if (careerView.key !== key) careerView = { key, index: 0, newest: false };
+  const sameQuestion = careerView.key === key;
+  if (!sameQuestion) careerView = { key, index: 0, newest: false };
+  const evidence = tierIncludes(settings.contextTier).cvText ? h.experience_evidence || [] : [];
+  const entries = topicMode ? topicTimeline(allCareerRoles, h.experience_topic || "", evidence) : [];
+  const acceptedEvidence = evidence.filter(e => quoteFromRole(allCareerRoles[e.role - 1], e.quote));
+  experienceHint = topicMode ? { ...h, experience_evidence: acceptedEvidence } : null;
+  experienceQuestionHint = topicMode ? h : null;
+  careerRoles = topicMode ? entries.map(e => ({ ...e.role, roleIndex: e.roleIndex, topicQuotes: e.quotes, direct: e.direct }))
+    : allCareerRoles.map((role, i) => ({ ...role, roleIndex: i + 1 }));
+  if (sameQuestion && previous) {
+    const nextIndex = (careerView.newest ? [...careerRoles].reverse() : careerRoles).findIndex(role => role.roleIndex === previous);
+    if (nextIndex >= 0) careerView.index = nextIndex;
+  }
+  ui.careerTitle.textContent = topicMode ? `Experience with ${h.experience_topic || "the requested topic"}` : "Career walkthrough";
   ui.careerOrder.value = careerView.newest ? "newest" : "oldest";
   ui.careerOverview.innerHTML = "";
-  for (const cue of h.career_overview || []) {
+  for (const cue of (topicMode ? h.experience_outline : h.career_overview) || []) {
     const li = document.createElement("li"); li.textContent = cue; ui.careerOverview.appendChild(li);
   }
   const first = careerRoles[0], last = careerRoles.at(-1);
-  ui.careerSummary.textContent = first
+  ui.careerSummary.textContent = topicMode ? first
+    ? `${careerRoles.length} relevant roles · ${first.from} → ${last.to}. Connect early exposure, development and recent work to this job.`
+    : "No dated role evidence found for this topic yet. Check the source mentions and prepared examples; missing dates do not establish no experience."
+    : first
     ? `${careerRoles.length} roles · ${first.from} → ${last.to}. Start with a brief overview, then follow the roles and close with the fit for this job.`
     : careerCv ? "Dated roles could not be separated reliably. Use the CV below to walk through the complete history."
       : "Upload or paste the candidate's CV in Settings to see the complete career timeline.";
-  ui.careerClose.hidden = !careerRoles.length;
+  ui.experienceDuration.hidden = !topicMode || !h.experience_asks_duration;
+  ui.experienceDuration.innerHTML = "";
+  if (!ui.experienceDuration.hidden) {
+    const duration = experienceDuration(entries, new Date(sessionStart || Date.now()));
+    const title = document.createElement("b"); title.textContent = duration.label;
+    const caveat = document.createElement("small"); caveat.textContent = duration.caveat;
+    ui.experienceDuration.append(title, caveat);
+  }
+  ui.experienceStories.innerHTML = "";
+  const names = new Set([...(h.stories || []).map(s => s.title.toLowerCase()), ...acceptedEvidence.map(e => e.story?.toLowerCase()).filter(Boolean)]);
+  const examples = topicMode ? (settings.stories || []).filter(story => names.has(story.title.toLowerCase())
+    || topicMatches([story.title, story.tags, story.situation, story.action, story.result].filter(Boolean).join(" "), h.experience_topic || "")) : [];
+  for (const example of examples) ui.experienceStories.appendChild(preparedExample(example));
+  ui.experienceExamples.hidden = !examples.length;
+  ui.careerClose.textContent = topicMode ? "Connect the stages with what changed in scope or depth, then close with relevance to this job. Confirm any duration before quoting it."
+    : "Close by connecting the relevant experience to this job. Explain transitions in your own words.";
+  ui.careerClose.hidden = !careerRoles.length && !examples.length;
   renderCareerRole();
 }
 
@@ -384,7 +450,7 @@ function renderCareerRole() {
   const roles = careerView.newest ? [...careerRoles].reverse() : careerRoles;
   careerView.index = Math.max(0, Math.min(careerView.index, roles.length - 1));
   ui.careerRoles.innerHTML = "";
-  ui.careerAllRoles.textContent = `All ${roles.length} roles — jump to any role`;
+  ui.careerAllRoles.textContent = `All ${roles.length} ${experienceHint ? "relevant " : ""}roles — jump to any role`;
   roles.forEach((role, index) => {
     const button = document.createElement("button");
     button.textContent = `${index + 1}. ${role.employer || role.title} · ${role.from}`;
@@ -403,7 +469,9 @@ function renderCareerRole() {
   ui.careerSlider.value = String(careerView.index);
   ui.careerSlider.setAttribute("aria-valuetext", role ? `${role.title}, ${role.employer}, ${role.dates}` : "No dated roles");
   if (!role) {
-    const cv = document.createElement("pre"); cv.className = "careerSource"; cv.textContent = careerCv;
+    const cv = document.createElement("pre"); cv.className = "careerSource";
+    const mentions = experienceHint ? careerCv.split("\n").filter(line => topicMatches(line, experienceHint.experience_topic || "")) : [];
+    cv.textContent = experienceHint ? mentions.length ? `CV mentions (dates not established):\n${mentions.join("\n")}` : "No supporting CV mention found. Review your notes and prepared examples for additional context." : careerCv;
     ui.careerRole.appendChild(cv);
     return;
   }
@@ -416,7 +484,17 @@ function renderCareerRole() {
     for (const text of points) { const li = document.createElement("li"); li.textContent = text; ul.appendChild(li); }
     return ul;
   };
-  ui.careerRole.appendChild(list(role.highlights.slice(0, 3)));
+  const points = experienceHint ? role.topicQuotes : role.highlights;
+  if (experienceHint && !role.direct) {
+    const related = document.createElement("p"); related.textContent = "Related role suggested by the model — confirm the topic connection. Not counted toward duration.";
+    ui.careerRole.appendChild(related);
+  }
+  ui.careerRole.appendChild(list(points.slice(0, 3)));
+  if (experienceHint) {
+    const linked = new Set((experienceHint.experience_evidence || []).filter(e => e.role === role.roleIndex
+      && role.topicQuotes.some(q => q.toLowerCase().includes(e.quote.toLowerCase()))).map(e => e.story?.toLowerCase()).filter(Boolean));
+    for (const story of settings.stories || []) if (linked.has(story.title.toLowerCase())) ui.careerRole.appendChild(preparedExample(story));
+  }
   if (role.highlights.length > 3) {
     const details = document.createElement("details"), summary = document.createElement("summary");
     summary.textContent = "More from this role"; details.append(summary, list(role.highlights.slice(3)));
@@ -429,7 +507,7 @@ function renderHint(h, { partial = false } = {}) {
   ui.hint.classList.toggle("partial", partial);
   ui.hintState.textContent = partial ? "\u2026" : "";
   ui.hintState.className = "hintState";
-  const typeLabel = h.question_type === "career_walkthrough" ? "Career walkthrough" : h.question_type;
+  const typeLabel = h.question_type === "career_walkthrough" ? "Career walkthrough" : h.question_type === "topic_experience" ? "Experience storyline" : h.question_type;
   ui.qtype.textContent = h.follow_up ? `${typeLabel} \u00b7 follow-up` : typeLabel;
   ui.question.textContent = h.question_summary;
   renderCareer(h);
@@ -440,7 +518,7 @@ function renderHint(h, { partial = false } = {}) {
   }
   ui.technicalNotes.hidden = h.question_type !== "technical" || !h.technical_points?.length;
   ui.stories.innerHTML = "";
-  ui.stories.hidden = h.question_type === "career_walkthrough";
+  ui.stories.hidden = ["career_walkthrough", "topic_experience"].includes(h.question_type);
   for (const s of h.stories) {
     const el = document.createElement("div");
     el.className = "story";
@@ -448,16 +526,7 @@ function renderHint(h, { partial = false } = {}) {
     const span = document.createElement("span"); span.textContent = s.cue;
     el.append(b, span);
     const q = !partial && questions.find((item) => item.id === selectedId && item.hint === h);
-    if (q) {
-      const used = document.createElement("button"); used.className = "small";
-      used.textContent = q.usedStories?.includes(s.title) ? "Used ✓ — undo" : "Used this story";
-      used.onclick = () => {
-        const titles = new Set(q.usedStories || []);
-        if (titles.has(s.title)) titles.delete(s.title); else titles.add(s.title);
-        q.usedStories = [...titles]; renderHint(h);
-      };
-      el.appendChild(used);
-    }
+    if (q) el.appendChild(usedStoryButton(q, s.title));
     const beats = s.beats?.length ? s.beats : [];
     if (beats.length) {
       const ul = document.createElement("ul"); ul.className = "beats";
@@ -628,6 +697,7 @@ function beginSessionIfNeeded() {
   settings = structuredClone(nextSettings || settings);
   transcriptName = settings.candidateName || "";
   captionSamples = [];
+  careerView = { key: "", index: 0, newest: false };
   sessionId = crypto.randomUUID();
   sessionVersion++;
   sessionStart = Date.now();

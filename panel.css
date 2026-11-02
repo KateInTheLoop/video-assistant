@@ -145,3 +145,6 @@ button.small { font-size: 12px; padding: 5px 10px; min-height: 0; text-transform
 #careerRole h3 { margin: 0 0 6px; }
 .careerSource { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font: inherit; }
 .hint:has(.careerWalkthrough:not([hidden])) { max-height: 65vh; flex: 0 1 auto; }
+.experienceDuration { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.experienceDuration small { display: block; margin-top: 6px; color: var(--muted); }
+.stories[hidden] { display: none; }

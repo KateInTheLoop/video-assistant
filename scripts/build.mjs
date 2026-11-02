@@ -20,6 +20,7 @@ const FILES = [
   "options.html", "options.js",
   "stt.js", "stt-assemblyai.js", "webspeech.js", "pcm-worklet.js",
   "README.md", "docs/first-run.md",
+  "skills/interview-coach/SKILL.md",
 ];
 
 const dist = join(root, "dist");
