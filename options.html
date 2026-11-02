@@ -49,6 +49,15 @@
   .pick select { flex: 1 1 auto; min-width: 0; }
   .pick button { flex: none; }
   .hero { font-size: 15px; line-height: 1.5; margin: 6px 0 0; }
+  .status[aria-busy="true"]::before {
+    content: ""; display: inline-block; width: .85em; height: .85em; margin-right: .5em;
+    border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%;
+    vertical-align: -.1em; animation: options-activity-spin .8s linear infinite;
+  }
+  @keyframes options-activity-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .status[aria-busy="true"]::before { animation: none; border-right-color: var(--accent); }
+  }
 </style>
 </head>
 <body>
@@ -193,10 +202,10 @@
 </details>
 
 <h2>What the coach sees</h2>
-<small>The context sent with every live hint, by component. Sizes are estimates (about four characters per token); click Count exactly for the API's number. The whole block is cached for an hour after the first hint, so after that each hint pays only a cache read. If the total is under the cache minimum, nothing caches and every hint pays full price: add stories or a CV.</small>
+<small>The reusable context sent with live hints, including the response format. Sizes use a rough four-characters-per-token estimate; the model's tokenizer can give a different count. Count with API measures a sample hint with an empty transcript. We request one-hour caching for unchanged context; cache hits depend on the provider. New transcript text, interview history and generated answers are billed separately. See Diagnostics for actual cache reads.</small>
 <table id="ctxTable" style="width:100%;font-size:13px;border-collapse:collapse"></table>
 <div class="actions">
-  <button id="btnCountCtx">Count exactly</button>
+  <button id="btnCountCtx">Count with API</button>
   <span id="ctxStatus" class="status"></span>
 </div>
 

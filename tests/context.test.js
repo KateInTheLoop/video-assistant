@@ -92,3 +92,19 @@ test("the request and the report agree about the tier", () => {
   assert.equal(rep.parts.find((p) => p.label === "CV").tokens, 0);
   assert.equal(rep.parts.find((p) => p.label === "Story bank").included, true);
 });
+
+test("the report includes role references, prompt wrappers and the live response format", () => {
+  const input = { ...ctx, cvText: "Analyst January 2020 - December 2021\nExample Company\n- Used SQL for reporting." };
+  const request = buildHintRequest({ ...input, transcript: [] });
+  const report = contextReport(input);
+  for (const label of ["Dated CV role index", "Headings and separators", "Response format"]) {
+    assert.ok(report.parts.find(p => p.label === label).tokens > 0, `${label} must not be hidden overhead`);
+  }
+  assert.equal(report.parts.find(p => p.label === "Response format").tokens, estimateTokens(JSON.stringify(request.output_config.format.schema)));
+  const allChars = request.system.map(b => b.text).join("") + JSON.stringify(request.output_config.format.schema);
+  assert.ok(Math.abs(report.total - estimateTokens(allChars)) < report.parts.length, "only per-component rounding may differ");
+  assert.equal(report.total, report.parts.reduce((sum, p) => sum + p.tokens, 0));
+  const lean = contextReport({ ...input, tier: "lean" });
+  assert.equal(lean.parts.find(p => p.label === "Dated CV role index").tokens, 0);
+  assert.equal(lean.parts.find(p => p.label === "Dated CV role index").included, false);
+});

@@ -63,9 +63,9 @@ export async function checkAnthropicKey(apiKey) {
   return { ok: false, reason: `Anthropic returned HTTP ${res.status}. ${body.slice(0, 160)}` };
 }
 
-// Exact token count of the hint prefix, for the "what the coach sees" panel.
+// API count for the full sample hint input, including its structured response format.
 export async function countHintTokens({ apiKey, body }) {
-  const { max_tokens, output_config, fallbacks, ...countable } = body;
+  const { max_tokens, fallbacks, stream, ...countable } = body;
   const res = await fetch("https://api.anthropic.com/v1/messages/count_tokens", { method: "POST", headers: headers(apiKey), body: JSON.stringify(countable) });
   if (!res.ok) throw new Error(`count_tokens ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return (await res.json()).input_tokens;
